@@ -19,16 +19,25 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Locate project and select Xcode
         run: |
+          set -euo pipefail
           xcodebuild -version
-          xcodebuild -list -project UgCloudiOS/UgCloudiOS.xcodeproj
+          PROJECT_PATH="$(find . -type d -name 'UgCloudiOS.xcodeproj' -print -quit)"
+          if [ -z "$PROJECT_PATH" ]; then
+            echo 'ERROR: Could not find UgCloudiOS.xcodeproj. Repository files:'
+            find . -maxdepth 5 -print | sort | head -300
+            exit 1
+          fi
+          echo "PROJECT_PATH=$PROJECT_PATH" >> "$GITHUB_ENV"
+          echo "Using project: $PROJECT_PATH"
+          xcodebuild -list -project "$PROJECT_PATH"
 
       - name: Build unsigned iOS app
         run: |
           set -o pipefail
           xcodebuild \
-            -project UgCloudiOS/UgCloudiOS.xcodeproj \
+            -project "$PROJECT_PATH" \
             -scheme UgCloudiOS \
             -configuration Release \
             -sdk iphoneos \
@@ -47,7 +56,6 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/UgCloudiOS.app"
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/ipa/Payload" "$RUNNER_TEMP/UgCloudiOS-unsigned.ipa"
-          cp "$RUNNER_TEMP/xcodebuild.log" "$RUNNER_TEMP/xcodebuild.log.copy"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
