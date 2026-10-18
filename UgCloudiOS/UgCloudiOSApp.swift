@@ -1,207 +1,78 @@
 
 import SwiftUI
 import WebKit
-import UIKit
 
 @main
 struct UgCloudiOSApp: App {
     var body: some Scene {
         WindowGroup {
-            UgPhoneWebApp()
+            UgPhoneScreen()
                 .preferredColorScheme(.dark)
+                .statusBarHidden(true)
         }
     }
 }
 
-@MainActor
-final class UgPhoneWebModel: ObservableObject {
-    @Published var canGoBack = false
-    @Published var canGoForward = false
-    @Published var isLoading = false
-    @Published var pageTitle = "UgPhone"
-    @Published var errorMessage: String?
-
-    let homeURL = URL(string: "https://www.ugphone.com/")!
-
-    weak var webView: WKWebView?
-
-    func attach(_ view: WKWebView) {
-        webView = view
-    }
-
-    func updateState(_ view: WKWebView) {
-        canGoBack = view.canGoBack
-        canGoForward = view.canGoForward
-        isLoading = view.isLoading
-        pageTitle = view.title ?? "UgPhone"
-    }
-
-    func back() {
-        webView?.goBack()
-    }
-
-    func forward() {
-        webView?.goForward()
-    }
-
-    func reload() {
-        errorMessage = nil
-        webView?.reload()
-    }
-
-    func openHome() {
-        errorMessage = nil
-        webView?.load(URLRequest(url: homeURL))
-    }
-
-    func openInSafari() {
-        UIApplication.shared.open(homeURL)
-    }
-}
-
-struct UgPhoneWebApp: View {
-    @StateObject private var model = UgPhoneWebModel()
-
+struct UgPhoneScreen: View {
     var body: some View {
-        VStack(spacing: 0) {
-            header
+        GeometryReader { geometry in
+            let availableWidth = geometry.size.width
+            let availableHeight = geometry.size.height
 
-            if model.isLoading {
-                ProgressView()
-                    .tint(.cyan)
-                    .frame(maxWidth: .infinity)
-            }
+            // Tỷ lệ màn hình 720 x 1280 = 9:16.
+            let screenWidth = min(
+                availableWidth,
+                availableHeight * 9.0 / 16.0
+            )
 
-            UgPhoneWebView(model: model)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            let screenHeight = screenWidth * 16.0 / 9.0
 
-            if let message = model.errorMessage {
-                VStack(spacing: 8) {
-                    Text(message)
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
 
-                    Button("Tải lại") {
-                        model.reload()
+                UgPhoneWebView()
+                    .frame(
+                        width: screenWidth,
+                        height: screenHeight
+                    )
+                    .overlay {
+                        Rectangle()
+                            .stroke(
+                                Color.black,
+                                lineWidth: 3
+                            )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.cyan)
-                }
-                .padding()
+                    .position(
+                        x: availableWidth / 2,
+                        y: availableHeight / 2
+                    )
             }
-
-            toolbar
+            .frame(
+                width: availableWidth,
+                height: availableHeight
+            )
+            .background(Color.black)
+            .clipped()
         }
-        .background(Color(red: 0.035, green: 0.05, blue: 0.08))
-        .foregroundStyle(.white)
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cloud.fill")
-                .font(.system(size: 25))
-                .foregroundStyle(.cyan)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("UGPHONE")
-                    .font(.headline.bold())
-                    .tracking(1.5)
-
-                Text(model.pageTitle)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            Button {
-                model.openInSafari()
-            } label: {
-                Image(systemName: "safari")
-                    .font(.title3)
-            }
-            .accessibilityLabel("Mở UgPhone bằng Safari")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.black.opacity(0.3))
-    }
-
-    private var toolbar: some View {
-        HStack {
-            toolbarButton(
-                "chevron.left",
-                enabled: model.canGoBack
-            ) {
-                model.back()
-            }
-
-            Spacer()
-
-            toolbarButton(
-                "chevron.right",
-                enabled: model.canGoForward
-            ) {
-                model.forward()
-            }
-
-            Spacer()
-
-            toolbarButton("house.fill") {
-                model.openHome()
-            }
-
-            Spacer()
-
-            toolbarButton(
-                model.isLoading ? "xmark" : "arrow.clockwise"
-            ) {
-                if model.isLoading {
-                    model.webView?.stopLoading()
-                } else {
-                    model.reload()
-                }
-            }
-        }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 13)
-        .background(Color.black.opacity(0.4))
-    }
-
-    private func toolbarButton(
-        _ symbol: String,
-        enabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .semibold))
-                .frame(width: 38, height: 32)
-                .contentShape(Rectangle())
-        }
-        .disabled(!enabled)
-        .foregroundStyle(
-            enabled ? Color.cyan : Color.gray.opacity(0.4)
-        )
+        .background(Color.black)
+        .ignoresSafeArea()
     }
 }
 
 struct UgPhoneWebView: UIViewRepresentable {
-    @ObservedObject var model: UgPhoneWebModel
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(model: model)
-    }
+    private let url = URL(
+        string: "https://www.ugphone.com/"
+    )!
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Dùng kho cookie của ứng dụng để lưu phiên đăng nhập web.
+        // Lưu phiên đăng nhập và cookie trong ứng dụng.
         configuration.websiteDataStore = .default()
 
         configuration.allowsInlineMediaPlayback = true
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.preferences.javaScriptEnabled = true
 
         let webView = WKWebView(
             frame: .zero,
@@ -210,91 +81,115 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.allowsBackForwardNavigationGestures = true
-        webView.isOpaque = false
-        webView.backgroundColor = UIColor(
-            red: 0.035,
-            green: 0.05,
-            blue: 0.08,
-            alpha: 1
+
+        // Không cho cuộn hoặc kéo trang.
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.showsVerticalScrollIndicator = false
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+
+        webView.isOpaque = true
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+
+        // Tăng nhẹ độ tương phản và độ rực của màn hình.
+        webView.layer.filters = [
+            CIFilter(name: "CIColorControls")!
+        ]
+
+        let appearanceCSS = """
+        html {
+            color-scheme: dark;
+            overflow: hidden !important;
+            overscroll-behavior: none !important;
+        }
+
+        body {
+            overflow: hidden !important;
+            overscroll-behavior: none !important;
+        }
+
+        ::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+        }
+        """
+
+        let cssScript = WKUserScript(
+            source: """
+            (function() {
+                var style = document.createElement('style');
+                style.textContent = \(Self.jsString(appearanceCSS));
+                (document.head || document.documentElement)
+                    .appendChild(style);
+
+                var meta = document.querySelector(
+                    'meta[name="viewport"]'
+                );
+
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    document.head.appendChild(meta);
+                }
+
+                meta.content =
+                    'width=device-width, initial-scale=1.0, ' +
+                    'maximum-scale=1.0, user-scalable=no';
+
+                document.documentElement.style.overflow = 'hidden';
+                document.body.style.overflow = 'hidden';
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
         )
-        webView.scrollView.backgroundColor = webView.backgroundColor
 
-        model.attach(webView)
+        configuration.userContentController.addUserScript(cssScript)
 
-        webView.load(URLRequest(url: model.homeURL))
+        webView.load(URLRequest(url: url))
 
         return webView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        // Không tải lại trang khi SwiftUI cập nhật giao diện.
+    func updateUIView(
+        _ webView: WKWebView,
+        context: Context
+    ) {
+        // Không tải lại trang khi giao diện SwiftUI cập nhật.
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    private static func jsString(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: [value],
+            options: []
+        ),
+        let json = String(data: data, encoding: .utf8),
+        json.count >= 2 else {
+            return "\"\""
+        }
+
+        return String(json.dropFirst().dropLast())
     }
 
     final class Coordinator: NSObject,
                             WKNavigationDelegate,
                             WKUIDelegate {
-        let model: UgPhoneWebModel
-
-        init(model: UgPhoneWebModel) {
-            self.model = model
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            didStartProvisionalNavigation navigation: WKNavigation!
-        ) {
-            model.errorMessage = nil
-            model.updateState(webView)
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            didFinish navigation: WKNavigation!
-        ) {
-            model.updateState(webView)
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            didFail navigation: WKNavigation!,
-            withError error: Error
-        ) {
-            showError(error, webView: webView)
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            didFailProvisionalNavigation navigation: WKNavigation!,
-            withError error: Error
-        ) {
-            showError(error, webView: webView)
-        }
-
-        private func showError(
-            _ error: Error,
-            webView: WKWebView
-        ) {
-            let nsError = error as NSError
-
-            // Bỏ qua lỗi hủy tải trang do người dùng chuyển trang.
-            if nsError.code == NSURLErrorCancelled {
-                return
-            }
-
-            model.errorMessage =
-                "Không tải được UgPhone. Hãy kiểm tra mạng hoặc thử mở bằng Safari."
-
-            model.updateState(webView)
-        }
-
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // Xử lý liên kết target=_blank trong cùng cửa sổ.
+            // Mở popup trong chính màn hình hiện tại.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
                 webView.load(URLRequest(url: url))
@@ -305,67 +200,12 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         func webView(
             _ webView: WKWebView,
-            runJavaScriptAlertPanelWithMessage message: String,
-            initiatedByFrame frame: WKFrameInfo,
-            completionHandler: @escaping () -> Void
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            let alert = UIAlertController(
-                title: "UgPhone",
-                message: message,
-                preferredStyle: .alert
-            )
-
-            alert.addAction(
-                UIAlertAction(title: "OK", style: .default) { _ in
-                    completionHandler()
-                }
-            )
-
-            present(alert)
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            runJavaScriptConfirmPanelWithMessage message: String,
-            initiatedByFrame frame: WKFrameInfo,
-            completionHandler: @escaping (Bool) -> Void
-        ) {
-            let alert = UIAlertController(
-                title: "UgPhone",
-                message: message,
-                preferredStyle: .alert
-            )
-
-            alert.addAction(
-                UIAlertAction(title: "Hủy", style: .cancel) { _ in
-                    completionHandler(false)
-                }
-            )
-
-            alert.addAction(
-                UIAlertAction(title: "Đồng ý", style: .default) { _ in
-                    completionHandler(true)
-                }
-            )
-
-            present(alert)
-        }
-
-        private func present(_ alert: UIAlertController) {
-            guard let scene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive }),
-                  let root = scene.windows.first(where: \.isKeyWindow)?
-                    .rootViewController else {
-                return
-            }
-
-            var top = root
-            while let presented = top.presentedViewController {
-                top = presented
-            }
-
-            top.present(alert, animated: true)
+            // Cho phép trang web điều hướng trong WebView,
+            // bao gồm các trang đăng nhập được website sử dụng.
+            decisionHandler(.allow)
         }
     }
 }
