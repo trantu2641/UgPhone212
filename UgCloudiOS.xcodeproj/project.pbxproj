@@ -1,0 +1,26 @@
+// !$*UTF8*$!
+{
+ archiveVersion = 1;
+ classes = {};
+ objectVersion = 56;
+ objects = {
+  A10000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1600;}; buildConfigurationList = A10000000000000000000002; compatibilityVersion = "Xcode 14.0"; mainGroup = A10000000000000000000003; productRefGroup = A10000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A10000000000000000000005 /* UgCloudiOS */);};
+  A10000000000000000000003 = {isa = PBXGroup; children = (A10000000000000000000010 /* UgCloudiOS */, A10000000000000000000004 /* Products */); sourceTree = "<group>";};
+  A10000000000000000000010 /* UgCloudiOS */ = {isa = PBXGroup; children = (A10000000000000000000006 /* UgCloudiOSApp.swift */, A10000000000000000000011 /* UgPhoneProvider.swift */,); path = UgCloudiOS; sourceTree = "<group>";};
+  A10000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A10000000000000000000007 /* UgCloudiOS.app */); name = Products; sourceTree = "<group>";};
+  A10000000000000000000006 /* UgCloudiOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UgCloudiOSApp.swift; sourceTree = "<group>";};
+  A10000000000000000000007 /* UgCloudiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UgCloudiOS.app; sourceTree = BUILT_PRODUCTS_DIR;};
+  A10000000000000000000008 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000009 /* UgCloudiOSApp.swift in Sources */, A10000000000000000000012 /* UgPhoneProvider.swift in Sources */); runOnlyForDeploymentPostprocessing = 0;};
+  A10000000000000000000009 = {isa = PBXBuildFile; fileRef = A10000000000000000000006;};
+  A10000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UgPhoneProvider.swift; sourceTree = "<group>";};
+  A10000000000000000000012 = {isa = PBXBuildFile; fileRef = A10000000000000000000011;};
+  A10000000000000000000005 /* UgCloudiOS */ = {isa = PBXNativeTarget; buildConfigurationList = A1000000000000000000000A; buildPhases = (A10000000000000000000008,); buildRules = (); dependencies = (); name = UgCloudiOS; productName = UgCloudiOS; productReference = A10000000000000000000007; productType = "com.apple.product-type.application";};
+  A10000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (A1000000000000000000000B, A1000000000000000000000C); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+  A1000000000000000000000A = {isa = XCConfigurationList; buildConfigurations = (A1000000000000000000000D, A1000000000000000000000E); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+  A1000000000000000000000B = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0;}; name = Debug;};
+  A1000000000000000000000C = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0;}; name = Release;};
+  A1000000000000000000000D = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "UG Cloud"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities"; PRODUCT_BUNDLE_IDENTIFIER = com.example.ugcloudios; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_EMIT_LOC_STRINGS = YES;}; name = Debug;};
+  A1000000000000000000000E = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "UG Cloud"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities"; PRODUCT_BUNDLE_IDENTIFIER = com.example.ugcloudios; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_EMIT_LOC_STRINGS = YES;}; name = Release;};
+ };
+ rootObject = A10000000000000000000001;
+}
