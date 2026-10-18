@@ -1,177 +1,371 @@
+
 import SwiftUI
+import WebKit
+import UIKit
 
 @main
 struct UgCloudiOSApp: App {
-    @StateObject private var store = DeviceStore()
     var body: some Scene {
-        WindowGroup { MainView().environmentObject(store).preferredColorScheme(.dark) }
-    }
-}
-
-struct CloudDevice: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var name: String
-    var endpoint: String
-    var status: String = "Chưa kết nối"
-    var autoReconnect: Bool = true
-    var note: String = "Thêm địa chỉ máy chủ điều khiển của bạn"
-}
-
-@MainActor final class DeviceStore: ObservableObject {
-    @Published var devices: [CloudDevice] = [] { didSet { save() } }
-    private let key = "ugcloud.devices.v1"
-    init() {
-        if let data = UserDefaults.standard.data(forKey: key), let saved = try? JSONDecoder().decode([CloudDevice].self, from: data) { devices = saved }
-        if devices.isEmpty {
-            devices = [CloudDevice(name: "Android của tôi", endpoint: "", note: "Mẫu thiết bị • chưa cấu hình kết nối")]
-        }
-    }
-    func save() { if let data = try? JSONEncoder().encode(devices) { UserDefaults.standard.set(data, forKey: key) } }
-    func add(name: String, endpoint: String) { devices.append(CloudDevice(name: name, endpoint: endpoint)) }
-    func update(_ device: CloudDevice) { if let i = devices.firstIndex(where: {$0.id == device.id}) { devices[i] = device } }
-    func remove(at offsets: IndexSet) { devices.remove(atOffsets: offsets) }
-}
-
-struct MainView: View {
-    @EnvironmentObject var store: DeviceStore
-    var body: some View {
-        TabView {
-            DeviceListView().tabItem { Label("Thiết bị", systemImage: "iphone.gen3") }
-            CloudView().tabItem { Label("Cloud", systemImage: "cloud.fill") }
-            FilesView().tabItem { Label("Tệp APK", systemImage: "folder.fill") }
-            SettingsView().tabItem { Label("Cài đặt", systemImage: "gearshape.fill") }
-        }.tint(.cyan)
-    }
-}
-
-struct DeviceListView: View {
-    @EnvironmentObject var store: DeviceStore
-    @State private var showingAdd = false
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(red: 0.035, green: 0.055, blue: 0.09).ignoresSafeArea()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("UG CLOUD").font(.system(size: 12, weight: .bold, design: .rounded)).tracking(3).foregroundStyle(.cyan)
-                                Text("Thiết bị của bạn").font(.system(size: 29, weight: .bold, design: .rounded))
-                                Text("Quản lý tập trung • kết nối từ xa").font(.subheadline).foregroundStyle(.white.opacity(0.58))
-                            }
-                            Spacer()
-                            Image(systemName: "cloud.fill").font(.system(size: 30)).foregroundStyle(.cyan)
-                        }.padding(.top, 14)
-                        Button { showingAdd = true } label: {
-                            Label("Thêm thiết bị", systemImage: "plus.circle.fill").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 15)
-                        }.buttonStyle(.borderedProminent).tint(.cyan).foregroundStyle(.black)
-                        ForEach(store.devices) { device in
-                            NavigationLink { DeviceDetailView(deviceID: device.id) } label: { DeviceCard(device: device) }.buttonStyle(.plain)
-                        }.onDelete(perform: store.remove)
-                        Text("Lưu ý: hiện đây là giao diện nền tảng. Kết nối thật cần dịch vụ Android/Cloud có API và thông tin xác thực tương thích.")
-                            .font(.caption).foregroundStyle(.white.opacity(0.45)).padding(.top, 4)
-                    }.padding(20)
-                }
-            }.toolbar(.hidden, for: .navigationBar).sheet(isPresented: $showingAdd) { AddDeviceView() }
+        WindowGroup {
+            UgPhoneWebApp()
+                .preferredColorScheme(.dark)
         }
     }
 }
 
-struct DeviceCard: View {
-    let device: CloudDevice
+@MainActor
+final class UgPhoneWebModel: ObservableObject {
+    @Published var canGoBack = false
+    @Published var canGoForward = false
+    @Published var isLoading = false
+    @Published var pageTitle = "UgPhone"
+    @Published var errorMessage: String?
+
+    let homeURL = URL(string: "https://www.ugphone.com/")!
+
+    weak var webView: WKWebView?
+
+    func attach(_ view: WKWebView) {
+        webView = view
+    }
+
+    func updateState(_ view: WKWebView) {
+        canGoBack = view.canGoBack
+        canGoForward = view.canGoForward
+        isLoading = view.isLoading
+        pageTitle = view.title ?? "UgPhone"
+    }
+
+    func back() {
+        webView?.goBack()
+    }
+
+    func forward() {
+        webView?.goForward()
+    }
+
+    func reload() {
+        errorMessage = nil
+        webView?.reload()
+    }
+
+    func openHome() {
+        errorMessage = nil
+        webView?.load(URLRequest(url: homeURL))
+    }
+
+    func openInSafari() {
+        UIApplication.shared.open(homeURL)
+    }
+}
+
+struct UgPhoneWebApp: View {
+    @StateObject private var model = UgPhoneWebModel()
+
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack { RoundedRectangle(cornerRadius: 16).fill(Color.cyan.opacity(0.13)); Image(systemName: "iphone.gen3").font(.system(size: 25)).foregroundStyle(.cyan) }.frame(width: 58, height: 66)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(device.name).font(.headline).foregroundStyle(.white)
-                Text(device.endpoint.isEmpty ? "Chưa cấu hình máy chủ" : device.endpoint).font(.caption).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
-                Label(device.status, systemImage: "circle.fill").font(.caption2).foregroundStyle(.orange)
+        VStack(spacing: 0) {
+            header
+
+            if model.isLoading {
+                ProgressView()
+                    .tint(.cyan)
+                    .frame(maxWidth: .infinity)
             }
+
+            UgPhoneWebView(model: model)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if let message = model.errorMessage {
+                VStack(spacing: 8) {
+                    Text(message)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+
+                    Button("Tải lại") {
+                        model.reload()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                }
+                .padding()
+            }
+
+            toolbar
+        }
+        .background(Color(red: 0.035, green: 0.05, blue: 0.08))
+        .foregroundStyle(.white)
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cloud.fill")
+                .font(.system(size: 25))
+                .foregroundStyle(.cyan)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("UGPHONE")
+                    .font(.headline.bold())
+                    .tracking(1.5)
+
+                Text(model.pageTitle)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+
             Spacer()
-            Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.35))
-        }.padding(14).background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.07)))
-    }
-}
 
-struct AddDeviceView: View {
-    @EnvironmentObject var store: DeviceStore
-    @Environment(\.dismiss) var dismiss
-    @State private var name = "Android mới"
-    @State private var endpoint = ""
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Thông tin thiết bị") {
-                    TextField("Tên dễ nhớ", text: $name)
-                    TextField("Địa chỉ API / máy chủ", text: $endpoint).textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
-                }
-                Section { Text("Chỉ nhập endpoint của máy chủ bạn sở hữu hoặc được phép sử dụng. Chưa thể kết nối UgPhone chỉ bằng cách đoán địa chỉ API.").font(.footnote).foregroundStyle(.secondary) }
-            }.navigationTitle("Thêm thiết bị").navigationBarTitleDisplayMode(.inline).toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Lưu") { store.add(name: name.isEmpty ? "Android mới" : name, endpoint: endpoint); dismiss() }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty) }
+            Button {
+                model.openInSafari()
+            } label: {
+                Image(systemName: "safari")
+                    .font(.title3)
             }
-        }.preferredColorScheme(.dark)
+            .accessibilityLabel("Mở UgPhone bằng Safari")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.3))
     }
-}
 
-struct DeviceDetailView: View {
-    @EnvironmentObject var store: DeviceStore
-    let deviceID: UUID
-    @State private var showConnectInfo = false
-    private var device: CloudDevice { store.devices.first(where: {$0.id == deviceID}) ?? CloudDevice(name: "Thiết bị", endpoint: "") }
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 28).fill(Color.black).overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
-                    VStack(spacing: 14) { Image(systemName: "display.and.arrow.down").font(.system(size: 44)).foregroundStyle(.cyan); Text("Màn hình Android").font(.title3.bold()); Text("Luồng hình ảnh sẽ xuất hiện tại đây khi backend streaming được cấu hình.").multilineTextAlignment(.center).font(.footnote).foregroundStyle(.white.opacity(0.55)).padding(.horizontal, 20) }
-                }.frame(height: 330)
-                Button { showConnectInfo = true } label: { Label("Kết nối thiết bị", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity).padding(14) }.buttonStyle(.borderedProminent).tint(.cyan).foregroundStyle(.black)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ActionTile(icon: "hand.tap", title: "Điều khiển", subtitle: "Chạm / vuốt")
-                    ActionTile(icon: "keyboard", title: "Bàn phím", subtitle: "Nhập văn bản")
-                    ActionTile(icon: "arrow.clockwise", title: "Khởi động lại", subtitle: "Cần API thiết bị")
-                    ActionTile(icon: "square.stack.3d.up", title: "Ứng dụng", subtitle: "Cần quyền quản trị")
+    private var toolbar: some View {
+        HStack {
+            toolbarButton(
+                "chevron.left",
+                enabled: model.canGoBack
+            ) {
+                model.back()
+            }
+
+            Spacer()
+
+            toolbarButton(
+                "chevron.right",
+                enabled: model.canGoForward
+            ) {
+                model.forward()
+            }
+
+            Spacer()
+
+            toolbarButton("house.fill") {
+                model.openHome()
+            }
+
+            Spacer()
+
+            toolbarButton(
+                model.isLoading ? "xmark" : "arrow.clockwise"
+            ) {
+                if model.isLoading {
+                    model.webView?.stopLoading()
+                } else {
+                    model.reload()
                 }
-                Toggle("Tự kết nối lại", isOn: Binding(get: { device.autoReconnect }, set: { var d = device; d.autoReconnect = $0; store.update(d) })).padding(16).background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-                Text("Các nút điều khiển hiện là khung giao diện, chưa gửi lệnh đến thiết bị.").font(.caption).foregroundStyle(.secondary)
-            }.padding(18)
-        }.background(Color(red: 0.035, green: 0.055, blue: 0.09)).navigationTitle(device.name).navigationBarTitleDisplayMode(.inline).alert("Chưa có kết nối backend", isPresented: $showConnectInfo) { Button("Đóng", role: .cancel) {} } message: { Text("Cần endpoint API, cơ chế đăng nhập và giao thức truyền màn hình của máy chủ hợp lệ trước khi bật kết nối thật.") }
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 13)
+        .background(Color.black.opacity(0.4))
+    }
+
+    private func toolbarButton(
+        _ symbol: String,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 38, height: 32)
+                .contentShape(Rectangle())
+        }
+        .disabled(!enabled)
+        .foregroundStyle(
+            enabled ? Color.cyan : Color.gray.opacity(0.4)
+        )
     }
 }
 
-struct ActionTile: View {
-    let icon: String; let title: String; let subtitle: String
-    var body: some View { VStack(alignment: .leading, spacing: 9) { Image(systemName: icon).font(.title2).foregroundStyle(.cyan); Text(title).font(.headline); Text(subtitle).font(.caption).foregroundStyle(.white.opacity(0.5)) }.frame(maxWidth: .infinity, minHeight: 94, alignment: .leading).padding(14).background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18)) }
-}
+struct UgPhoneWebView: UIViewRepresentable {
+    @ObservedObject var model: UgPhoneWebModel
 
-struct CloudView: View {
-    var body: some View { NavigationStack { List {
-        Section { Label("Khởi chạy Android trên đám mây", systemImage: "cloud.fill").font(.headline); Text("Để tạo máy ảo/cloud phone thật, cần nhà cung cấp hoặc cụm máy chủ Android, API cấp phát phiên, xác thực và thanh toán.").font(.footnote).foregroundStyle(.secondary) }
-        Section("Các bước tích hợp") { Label("Chọn nhà cung cấp hoặc tự host", systemImage: "server.rack"); Label("Tích hợp API tạo / dừng máy", systemImage: "play.rectangle"); Label("Nhận thông tin stream và kết nối", systemImage: "dot.radiowaves.left.and.right") }
-    }.navigationTitle("Cloud Phone") }.preferredColorScheme(.dark) }
-}
+    func makeCoordinator() -> Coordinator {
+        Coordinator(model: model)
+    }
 
-struct FilesView: View {
-    @State private var showingPicker = false
-    @State private var selectedName: String?
-    var body: some View { NavigationStack { VStack(spacing: 18) {
-        Image(systemName: "shippingbox.fill").font(.system(size: 46)).foregroundStyle(.cyan)
-        Text("Quản lý APK").font(.title2.bold())
-        Text("Chọn tệp APK từ ứng dụng Tệp để chuẩn bị chuyển lên thiết bị Android khi kết nối truyền tệp được tích hợp.").multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
-        Button { showingPicker = true } label: { Label("Chọn tệp APK", systemImage: "folder.badge.plus").frame(maxWidth: .infinity).padding(14) }.buttonStyle(.borderedProminent).tint(.cyan).foregroundStyle(.black).padding(.horizontal)
-        if let selectedName { Label("Đã chọn: \(selectedName)", systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.green).padding(.horizontal) }
-        Text("iOS không thể cài APK trực tiếp. Tệp cần được chuyển tới Android và cài bằng cơ chế được thiết bị cho phép.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 24)
-        Spacer()
-    }.padding(.top, 40).navigationTitle("Tệp & APK") }.fileImporter(isPresented: $showingPicker, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
-        if case .success(let urls) = result { selectedName = urls.first?.lastPathComponent }
-    }.preferredColorScheme(.dark) }
-}
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
 
-struct SettingsView: View {
-    var body: some View { NavigationStack { List {
-        Section("Ứng dụng") { LabeledContent("Tên", value: "UG Cloud iOS"); LabeledContent("Phiên bản", value: "0.1.0 • Prototype") }
-        Section("Bảo mật") { Label("Không nhúng mật khẩu hay token vào mã nguồn", systemImage: "lock.shield"); Label("Chỉ kết nối máy chủ HTTPS/WSS đáng tin cậy", systemImage: "checkmark.shield") }
-        Section("Tình trạng") { Text("Chưa có backend API, thông tin xác thực UgPhone hoặc chứng thư ký IPA. Đây là bản khung giao diện để phát triển tiếp.").font(.footnote).foregroundStyle(.secondary) }
-    }.navigationTitle("Cài đặt") }.preferredColorScheme(.dark) }
+        // Dùng kho cookie của ứng dụng để lưu phiên đăng nhập web.
+        configuration.websiteDataStore = .default()
+
+        configuration.allowsInlineMediaPlayback = true
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+
+        let webView = WKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+
+        webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = true
+        webView.isOpaque = false
+        webView.backgroundColor = UIColor(
+            red: 0.035,
+            green: 0.05,
+            blue: 0.08,
+            alpha: 1
+        )
+        webView.scrollView.backgroundColor = webView.backgroundColor
+
+        model.attach(webView)
+
+        webView.load(URLRequest(url: model.homeURL))
+
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        // Không tải lại trang khi SwiftUI cập nhật giao diện.
+    }
+
+    final class Coordinator: NSObject,
+                            WKNavigationDelegate,
+                            WKUIDelegate {
+        let model: UgPhoneWebModel
+
+        init(model: UgPhoneWebModel) {
+            self.model = model
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didStartProvisionalNavigation navigation: WKNavigation!
+        ) {
+            model.errorMessage = nil
+            model.updateState(webView)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            model.updateState(webView)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFail navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            showError(error, webView: webView)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            showError(error, webView: webView)
+        }
+
+        private func showError(
+            _ error: Error,
+            webView: WKWebView
+        ) {
+            let nsError = error as NSError
+
+            // Bỏ qua lỗi hủy tải trang do người dùng chuyển trang.
+            if nsError.code == NSURLErrorCancelled {
+                return
+            }
+
+            model.errorMessage =
+                "Không tải được UgPhone. Hãy kiểm tra mạng hoặc thử mở bằng Safari."
+
+            model.updateState(webView)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            // Xử lý liên kết target=_blank trong cùng cửa sổ.
+            if navigationAction.targetFrame == nil,
+               let url = navigationAction.request.url {
+                webView.load(URLRequest(url: url))
+            }
+
+            return nil
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptAlertPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping () -> Void
+        ) {
+            let alert = UIAlertController(
+                title: "UgPhone",
+                message: message,
+                preferredStyle: .alert
+            )
+
+            alert.addAction(
+                UIAlertAction(title: "OK", style: .default) { _ in
+                    completionHandler()
+                }
+            )
+
+            present(alert)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptConfirmPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping (Bool) -> Void
+        ) {
+            let alert = UIAlertController(
+                title: "UgPhone",
+                message: message,
+                preferredStyle: .alert
+            )
+
+            alert.addAction(
+                UIAlertAction(title: "Hủy", style: .cancel) { _ in
+                    completionHandler(false)
+                }
+            )
+
+            alert.addAction(
+                UIAlertAction(title: "Đồng ý", style: .default) { _ in
+                    completionHandler(true)
+                }
+            )
+
+            present(alert)
+        }
+
+        private func present(_ alert: UIAlertController) {
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+                  let root = scene.windows.first(where: \.isKeyWindow)?
+                    .rootViewController else {
+                return
+            }
+
+            var top = root
+            while let presented = top.presentedViewController {
+                top = presented
+            }
+
+            top.present(alert, animated: true)
+        }
+    }
 }
