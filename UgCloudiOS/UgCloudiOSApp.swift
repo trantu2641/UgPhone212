@@ -13,23 +13,57 @@ struct UgCloudiOSApp: App {
     }
 }
 
+// MARK: - Remember last UgPhone page
+
+enum UgPhoneSession {
+    private static let savedURLKey = "UgPhone.LastURL"
+
+    static func savedURL() -> URL? {
+        guard
+            let value = UserDefaults.standard.string(forKey: savedURLKey),
+            let url = URL(string: value),
+            let host = url.host,
+            isUgPhoneHost(host)
+        else {
+            return nil
+        }
+
+        return url
+    }
+
+    static func saveURL(_ url: URL) {
+        guard let host = url.host, isUgPhoneHost(host) else {
+            return
+        }
+
+        UserDefaults.standard.set(
+            url.absoluteString,
+            forKey: savedURLKey
+        )
+    }
+
+    private static func isUgPhoneHost(_ host: String) -> Bool {
+        host == "ugphone.com" || host.hasSuffix(".ugphone.com")
+    }
+}
+
+// MARK: - Main screen
+
 struct UgPhoneScreen: View {
     var body: some View {
         GeometryReader { geometry in
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Tỷ lệ màn hình 720 x 1280 = 9:16.
+            // Portrait ratio: 720 x 1280
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 16.0
             )
-
             let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
-                Color.black
-                    .ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
                 UgPhoneWebView()
                     .frame(
@@ -38,10 +72,7 @@ struct UgPhoneScreen: View {
                     )
                     .overlay {
                         Rectangle()
-                            .stroke(
-                                Color.black,
-                                lineWidth: 3
-                            )
+                            .stroke(Color.black, lineWidth: 3)
                     }
                     .position(
                         x: availableWidth / 2,
@@ -52,7 +83,6 @@ struct UgPhoneScreen: View {
                 width: availableWidth,
                 height: availableHeight
             )
-            .background(Color.black)
             .clipped()
         }
         .background(Color.black)
@@ -60,49 +90,29 @@ struct UgPhoneScreen: View {
     }
 }
 
+// MARK: - UgPhone website
+
 struct UgPhoneWebView: UIViewRepresentable {
-    private let url = URL(
+    private let homeURL = URL(
         string: "https://www.ugphone.com/"
     )!
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Lưu phiên đăng nhập và cookie trong ứng dụng.
+        // Keep website cookies and login session between launches.
         configuration.websiteDataStore = .default()
-
         configuration.allowsInlineMediaPlayback = true
-        configuration.preferences.javaScriptEnabled = true
 
-        let webView = WKWebView(
-            frame: .zero,
-            configuration: configuration
-        )
+        // Configure JavaScript before creating the web view.
+        let contentController = WKUserContentController()
 
-        webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator
-
-        // Không cho cuộn hoặc kéo trang.
-        webView.scrollView.isScrollEnabled = false
-        webView.scrollView.bounces = false
-        webView.scrollView.alwaysBounceVertical = false
-        webView.scrollView.alwaysBounceHorizontal = false
-        webView.scrollView.showsVerticalScrollIndicator = false
-        webView.scrollView.showsHorizontalScrollIndicator = false
-        webView.scrollView.pinchGestureRecognizer?.isEnabled = false
-
-        webView.isOpaque = true
-        webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
-
-        // Tăng nhẹ độ tương phản và độ rực của màn hình.
-        webView.layer.filters = [
-            CIFilter(name: "CIColorControls")!
-        ]
-
-        let appearanceCSS = """
+        let css = """
         html {
-            color-scheme: dark;
             overflow: hidden !important;
             overscroll-behavior: none !important;
         }
@@ -110,6 +120,8 @@ struct UgPhoneWebView: UIViewRepresentable {
         body {
             overflow: hidden !important;
             overscroll-behavior: none !important;
+            contrast: 1;
+            filter: contrast(1.05) saturate(1.04);
         }
 
         ::-webkit-scrollbar {
@@ -119,11 +131,21 @@ struct UgPhoneWebView: UIViewRepresentable {
         }
         """
 
-        let cssScript = WKUserScript(
-            source: """
-            (function() {
+        let cssData = try? JSONSerialization.data(
+            withJSONObject: [css],
+            options: []
+        )
+
+        let cssJSON = cssData.flatMap {
+            String(data: $0, encoding: .utf8)
+        } ?? "[\"\"]"
+
+        let scriptSource = """
+        (function() {
+            try {
+                var css = \(cssJSON);
                 var style = document.createElement('style');
-                style.textContent = \(Self.jsString(appearanceCSS));
+                style.textContent = css[0];
                 (document.head || document.documentElement)
                     .appendChild(style);
 
@@ -140,18 +162,45 @@ struct UgPhoneWebView: UIViewRepresentable {
                 meta.content =
                     'width=device-width, initial-scale=1.0, ' +
                     'maximum-scale=1.0, user-scalable=no';
+            } catch (e) {}
+        })();
+        """
 
-                document.documentElement.style.overflow = 'hidden';
-                document.body.style.overflow = 'hidden';
-            })();
-            """,
+        let script = WKUserScript(
+            source: scriptSource,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         )
 
-        configuration.userContentController.addUserScript(cssScript)
+        contentController.addUserScript(script)
+        configuration.userContentController = contentController
 
-        webView.load(URLRequest(url: url))
+        let webView = WKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+
+        webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
+
+        // Disable page scrolling, bouncing and zoom gestures.
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.showsVerticalScrollIndicator = false
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+
+        webView.isOpaque = true
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+
+        context.coordinator.webView = webView
+
+        // Open the last saved UgPhone page, if available.
+        let startURL = UgPhoneSession.savedURL() ?? homeURL
+        webView.load(URLRequest(url: startURL))
 
         return webView
     }
@@ -160,36 +209,35 @@ struct UgPhoneWebView: UIViewRepresentable {
         _ webView: WKWebView,
         context: Context
     ) {
-        // Không tải lại trang khi giao diện SwiftUI cập nhật.
+        // Do not reload the page during SwiftUI updates.
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    private static func jsString(_ value: String) -> String {
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: [value],
-            options: []
-        ),
-        let json = String(data: data, encoding: .utf8),
-        json.count >= 2 else {
-            return "\"\""
-        }
-
-        return String(json.dropFirst().dropLast())
-    }
+    // MARK: - Navigation and session handling
 
     final class Coordinator: NSObject,
                             WKNavigationDelegate,
                             WKUIDelegate {
+        weak var webView: WKWebView?
+
+        func webView(
+            _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            guard let currentURL = webView.url else {
+                return
+            }
+
+            // Save the current UgPhone page for next launch.
+            UgPhoneSession.saveURL(currentURL)
+        }
+
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // Mở popup trong chính màn hình hiện tại.
+            // Keep links that request a new window inside this web view.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
                 webView.load(URLRequest(url: url))
@@ -203,8 +251,6 @@ struct UgPhoneWebView: UIViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            // Cho phép trang web điều hướng trong WebView,
-            // bao gồm các trang đăng nhập được website sử dụng.
             decisionHandler(.allow)
         }
     }
