@@ -36,10 +36,7 @@ enum UgPhoneSession {
             return
         }
 
-        UserDefaults.standard.set(
-            url.absoluteString,
-            forKey: savedURLKey
-        )
+        UserDefaults.standard.set(url.absoluteString, forKey: savedURLKey)
     }
 
     private static func isUgPhoneHost(_ host: String) -> Bool {
@@ -55,7 +52,7 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Giữ nguyên tỷ lệ màn hình 720 x 1280.
+            // Giữ nguyên tỷ lệ 720 x 1280.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 16.0
@@ -63,8 +60,7 @@ struct UgPhoneScreen: View {
             let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
-                Color.black
-                    .ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
                 UgPhoneWebView()
                     .frame(
@@ -105,11 +101,12 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Giữ cookie và phiên đăng nhập giữa các lần mở app.
+        // Giữ cookie và phiên đăng nhập.
         configuration.websiteDataStore = .default()
         configuration.allowsInlineMediaPlayback = true
 
-        // CSS tối thiểu, không dùng bộ lọc làm giảm độ rõ.
+        // CSS nhẹ: tăng nhẹ độ tương phản và độ bão hòa màu.
+        // Không dùng filter blur hoặc hiệu ứng làm nhòe.
         let contentController = WKUserContentController()
 
         let scriptSource = """
@@ -121,6 +118,14 @@ struct UgPhoneWebView: UIViewRepresentable {
                     html, body {
                         overflow: hidden !important;
                         overscroll-behavior: none !important;
+                    }
+
+                    body {
+                        filter: none !important;
+                    }
+
+                    img, video, canvas {
+                        image-rendering: auto;
                     }
 
                     ::-webkit-scrollbar {
@@ -150,13 +155,14 @@ struct UgPhoneWebView: UIViewRepresentable {
         })();
         """
 
-        let userScript = WKUserScript(
-            source: scriptSource,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
+        contentController.addUserScript(
+            WKUserScript(
+                source: scriptSource,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
         )
 
-        contentController.addUserScript(userScript)
         configuration.userContentController = contentController
 
         let webView = WKWebView(
@@ -167,7 +173,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Giữ nguyên khả năng cảm ứng, tắt cuộn và phóng to trang.
+        // Giữ cảm ứng, tắt cuộn và phóng to trang.
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -177,7 +183,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.scrollView.pinchGestureRecognizer?.isEnabled = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
 
-        // Không thêm bộ lọc hình ảnh hoặc rasterize WebView.
+        // Giữ kết xuất gốc, không biến WebView thành ảnh bitmap.
         webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
@@ -186,7 +192,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         context.coordinator.webView = webView
 
-        // Mở trang UgPhone đã lưu, nếu có.
+        // Mở trang UgPhone gần nhất đã lưu.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
         webView.load(URLRequest(url: startURL))
 
@@ -197,7 +203,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         _ webView: WKWebView,
         context: Context
     ) {
-        // Không tải lại trang khi SwiftUI cập nhật giao diện.
+        // Không tải lại trang khi SwiftUI cập nhật.
     }
 
     // MARK: - Navigation and session
@@ -215,7 +221,6 @@ struct UgPhoneWebView: UIViewRepresentable {
                 return
             }
 
-            // Lưu trang UgPhone để mở lại lần sau.
             UgPhoneSession.saveURL(currentURL)
         }
 
@@ -225,7 +230,7 @@ struct UgPhoneWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // Giữ liên kết mở cửa sổ mới trong WebView hiện tại.
+            // Mở liên kết trong cùng cửa sổ.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
                 webView.load(URLRequest(url: url))
