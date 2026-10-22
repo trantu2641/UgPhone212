@@ -13,7 +13,7 @@ struct UgCloudiOSApp: App {
     }
 }
 
-// MARK: - Remember last UgPhone page
+// MARK: - Session
 
 enum UgPhoneSession {
     private static let savedURLKey = "UgPhone.LastURL"
@@ -44,32 +44,35 @@ enum UgPhoneSession {
     }
 }
 
-// MARK: - Main screen
+// MARK: - Screen
 
 struct UgPhoneScreen: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         GeometryReader { geometry in
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Giữ nguyên tỷ lệ 720 x 1280.
+            // Khung 9:16, tương ứng màn hình dọc 720 x 1280.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 16.0
             )
+
             let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                UgPhoneWebView()
+                UgPhoneWebView(isActive: scenePhase == .active)
                     .frame(
                         width: screenWidth,
                         height: screenHeight
                     )
                     .overlay {
                         Rectangle()
-                            .stroke(Color.black, lineWidth: 3)
+                            .stroke(Color.black, lineWidth: 1)
                     }
                     .position(
                         x: availableWidth / 2,
@@ -87,9 +90,11 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - UgPhone WebView
+// MARK: - WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
+    let isActive: Bool
+
     private let homeURL = URL(
         string: "https://www.ugphone.com/"
     )!
@@ -101,42 +106,52 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Giữ cookie và phiên đăng nhập.
+        // Giữ cookie, đăng nhập và dữ liệu website giữa các lần mở app.
         configuration.websiteDataStore = .default()
+
+        // Giữ video phát trực tiếp bên trong trang nếu website hỗ trợ.
         configuration.allowsInlineMediaPlayback = true
 
-        // CSS nhẹ: tăng nhẹ độ tương phản và độ bão hòa màu.
-        // Không dùng filter blur hoặc hiệu ứng làm nhòe.
         let contentController = WKUserContentController()
 
-        let scriptSource = """
+        let optimizationScript = """
         (function() {
-            try {
-                var style = document.createElement('style');
+            if (window.__ugCloudOptimizationInstalled) return;
+            window.__ugCloudOptimizationInstalled = true;
 
-                style.textContent = `
-                    html, body {
-                        overflow: hidden !important;
-                        overscroll-behavior: none !important;
-                    }
+            function installStyle() {
+                if (!document.documentElement) return;
 
-                    body {
-                        filter: none !important;
-                    }
+                if (!document.getElementById('ug-cloud-optimization')) {
+                    var style = document.createElement('style');
+                    style.id = 'ug-cloud-optimization';
 
-                    img, video, canvas {
-                        image-rendering: auto;
-                    }
+                    style.textContent = `
+                        html, body {
+                            overscroll-behavior: none !important;
+                        }
 
-                    ::-webkit-scrollbar {
-                        display: none !important;
-                        width: 0 !important;
-                        height: 0 !important;
-                    }
-                `;
+                        ::-webkit-scrollbar {
+                            width: 0 !important;
+                            height: 0 !important;
+                        }
 
-                (document.head || document.documentElement)
-                    .appendChild(style);
+                        html {
+                            scroll-behavior: auto !important;
+                        }
+
+                        @media (prefers-reduced-motion: reduce) {
+                            *,
+                            *::before,
+                            *::after {
+                                scroll-behavior: auto !important;
+                            }
+                        }
+                    `;
+
+                    (document.head || document.documentElement)
+                        .appendChild(style);
+                }
 
                 var meta = document.querySelector(
                     'meta[name="viewport"]'
@@ -145,19 +160,71 @@ struct UgPhoneWebView: UIViewRepresentable {
                 if (!meta) {
                     meta = document.createElement('meta');
                     meta.name = 'viewport';
-                    document.head.appendChild(meta);
+
+                    if (document.head) {
+                        document.head.appendChild(meta);
+                    }
                 }
 
-                meta.content =
-                    'width=device-width, initial-scale=1.0, ' +
-                    'maximum-scale=1.0, user-scalable=no';
-            } catch (e) {}
+                if (meta) {
+                    meta.content =
+                        'width=device-width, initial-scale=1.0, ' +
+                        'maximum-scale=1.0, user-scalable=no';
+                }
+            }
+
+            installStyle();
+
+            // Ghi nhớ video nào đang phát trước khi app xuống nền.
+            window.__ugPauseMedia = function() {
+                document.querySelectorAll('video').forEach(function(v) {
+                    v.dataset.ugWasPlaying =
+                        (!v.paused && !v.ended) ? '1' : '0';
+
+                    if (!v.paused) {
+                        v.pause();
+                    }
+                });
+            };
+
+            // Chỉ thử khôi phục video vốn đang phát trước đó.
+            window.__ugResumeMedia = function() {
+                document.querySelectorAll('video').forEach(function(v) {
+                    if (v.dataset.ugWasPlaying === '1') {
+                        delete v.dataset.ugWasPlaying;
+
+                        var result = v.play();
+
+                        if (result && result.catch) {
+                            result.catch(function() {});
+                        }
+                    } else {
+                        delete v.dataset.ugWasPlaying;
+                    }
+                });
+            };
+
+            // Bổ sung style nếu website dựng lại phần head.
+            var observer = new MutationObserver(function() {
+                if (!document.getElementById(
+                    'ug-cloud-optimization'
+                )) {
+                    installStyle();
+                }
+            });
+
+            if (document.documentElement) {
+                observer.observe(document.documentElement, {
+                    childList: true,
+                    subtree: true
+                });
+            }
         })();
         """
 
         contentController.addUserScript(
             WKUserScript(
-                source: scriptSource,
+                source: optimizationScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
@@ -173,7 +240,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Giữ cảm ứng, tắt cuộn và phóng to trang.
+        // Không cuộn trang ngoài khung cloud phone.
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -183,16 +250,17 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.scrollView.pinchGestureRecognizer?.isEnabled = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
 
-        // Giữ kết xuất gốc, không biến WebView thành ảnh bitmap.
         webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
+
+        // Không rasterize toàn bộ trang động, tránh tạo thêm chi phí
+        // bộ nhớ và cập nhật hình ảnh cho nội dung cloud phone.
         webView.layer.shouldRasterize = false
         webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
 
-        // Mở trang UgPhone gần nhất đã lưu.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
         webView.load(URLRequest(url: startURL))
 
@@ -203,15 +271,26 @@ struct UgPhoneWebView: UIViewRepresentable {
         _ webView: WKWebView,
         context: Context
     ) {
-        // Không tải lại trang khi SwiftUI cập nhật.
+        guard context.coordinator.lastActive != isActive else {
+            return
+        }
+
+        context.coordinator.lastActive = isActive
+
+        let script = isActive
+            ? "window.__ugResumeMedia && window.__ugResumeMedia();"
+            : "window.__ugPauseMedia && window.__ugPauseMedia();"
+
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
-    // MARK: - Navigation and session
+    // MARK: Navigation and window handling
 
     final class Coordinator: NSObject,
-                            WKNavigationDelegate,
-                            WKUIDelegate {
+                             WKNavigationDelegate,
+                             WKUIDelegate {
         weak var webView: WKWebView?
+        var lastActive: Bool?
 
         func webView(
             _ webView: WKWebView,
@@ -224,13 +303,13 @@ struct UgPhoneWebView: UIViewRepresentable {
             UgPhoneSession.saveURL(currentURL)
         }
 
+        // Xử lý liên kết mở cửa sổ mới ngay trong cùng WebView.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // Mở liên kết trong cùng cửa sổ.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
                 webView.load(URLRequest(url: url))
@@ -242,9 +321,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (
-                WKNavigationActionPolicy
-            ) -> Void
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             decisionHandler(.allow)
         }
