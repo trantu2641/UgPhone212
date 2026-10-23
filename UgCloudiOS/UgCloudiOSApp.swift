@@ -13,7 +13,7 @@ struct UgCloudiOSApp: App {
     }
 }
 
-// MARK: - Session
+// MARK: - Save last UgPhone page
 
 enum UgPhoneSession {
     private static let savedURLKey = "UgPhone.LastURL"
@@ -44,7 +44,7 @@ enum UgPhoneSession {
     }
 }
 
-// MARK: - Screen
+// MARK: - Main screen
 
 struct UgPhoneScreen: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -54,7 +54,6 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Khung 9:16, tương ứng màn hình dọc 720 x 1280.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 16.0
@@ -63,7 +62,8 @@ struct UgPhoneScreen: View {
             let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color.black
+                    .ignoresSafeArea()
 
                 UgPhoneWebView(isActive: scenePhase == .active)
                     .frame(
@@ -90,7 +90,7 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - WebView
+// MARK: - UgPhone WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
     let isActive: Bool
@@ -106,25 +106,25 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Giữ cookie, đăng nhập và dữ liệu website giữa các lần mở app.
+        // Preserve cookies and website login data.
         configuration.websiteDataStore = .default()
 
-        // Giữ video phát trực tiếp bên trong trang nếu website hỗ trợ.
+        // Allow inline playback when supported by UgPhone.
         configuration.allowsInlineMediaPlayback = true
 
         let contentController = WKUserContentController()
 
         let optimizationScript = """
         (function() {
-            if (window.__ugCloudOptimizationInstalled) return;
-            window.__ugCloudOptimizationInstalled = true;
+            if (window.__ugCloudInstalled) return;
+            window.__ugCloudInstalled = true;
 
-            function installStyle() {
+            function addOptimizationStyle() {
                 if (!document.documentElement) return;
 
-                if (!document.getElementById('ug-cloud-optimization')) {
+                if (!document.getElementById('ug-cloud-style')) {
                     var style = document.createElement('style');
-                    style.id = 'ug-cloud-optimization';
+                    style.id = 'ug-cloud-style';
 
                     style.textContent = `
                         html, body {
@@ -139,14 +139,6 @@ struct UgPhoneWebView: UIViewRepresentable {
                         html {
                             scroll-behavior: auto !important;
                         }
-
-                        @media (prefers-reduced-motion: reduce) {
-                            *,
-                            *::before,
-                            *::after {
-                                scroll-behavior: auto !important;
-                            }
-                        }
                     `;
 
                     (document.head || document.documentElement)
@@ -157,13 +149,10 @@ struct UgPhoneWebView: UIViewRepresentable {
                     'meta[name="viewport"]'
                 );
 
-                if (!meta) {
+                if (!meta && document.head) {
                     meta = document.createElement('meta');
                     meta.name = 'viewport';
-
-                    if (document.head) {
-                        document.head.appendChild(meta);
-                    }
+                    document.head.appendChild(meta);
                 }
 
                 if (meta) {
@@ -173,52 +162,36 @@ struct UgPhoneWebView: UIViewRepresentable {
                 }
             }
 
-            installStyle();
+            addOptimizationStyle();
 
-            // Ghi nhớ video nào đang phát trước khi app xuống nền.
-            window.__ugPauseMedia = function() {
-                document.querySelectorAll('video').forEach(function(v) {
-                    v.dataset.ugWasPlaying =
-                        (!v.paused && !v.ended) ? '1' : '0';
+            // Pause HTML videos when the app enters the background.
+            window.__ugPauseVideos = function() {
+                document.querySelectorAll('video').forEach(function(video) {
+                    video.dataset.ugWasPlaying =
+                        (!video.paused && !video.ended) ? '1' : '0';
 
-                    if (!v.paused) {
-                        v.pause();
+                    if (!video.paused) {
+                        video.pause();
                     }
                 });
             };
 
-            // Chỉ thử khôi phục video vốn đang phát trước đó.
-            window.__ugResumeMedia = function() {
-                document.querySelectorAll('video').forEach(function(v) {
-                    if (v.dataset.ugWasPlaying === '1') {
-                        delete v.dataset.ugWasPlaying;
+            // Resume only videos that were playing before backgrounding.
+            window.__ugResumeVideos = function() {
+                document.querySelectorAll('video').forEach(function(video) {
+                    if (video.dataset.ugWasPlaying === '1') {
+                        delete video.dataset.ugWasPlaying;
 
-                        var result = v.play();
+                        var promise = video.play();
 
-                        if (result && result.catch) {
-                            result.catch(function() {});
+                        if (promise && promise.catch) {
+                            promise.catch(function() {});
                         }
                     } else {
-                        delete v.dataset.ugWasPlaying;
+                        delete video.dataset.ugWasPlaying;
                     }
                 });
             };
-
-            // Bổ sung style nếu website dựng lại phần head.
-            var observer = new MutationObserver(function() {
-                if (!document.getElementById(
-                    'ug-cloud-optimization'
-                )) {
-                    installStyle();
-                }
-            });
-
-            if (document.documentElement) {
-                observer.observe(document.documentElement, {
-                    childList: true,
-                    subtree: true
-                });
-            }
         })();
         """
 
@@ -240,7 +213,8 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Không cuộn trang ngoài khung cloud phone.
+        // Keep the original touch events available to the webpage.
+        // Disable outer-page scrolling without adding touch interceptors.
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -254,15 +228,20 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
-        // Không rasterize toàn bộ trang động, tránh tạo thêm chi phí
-        // bộ nhớ và cập nhật hình ảnh cho nội dung cloud phone.
+        // Do not rasterize dynamic content such as video.
         webView.layer.shouldRasterize = false
         webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
+        context.coordinator.lastActive = isActive
 
+        // Restore the previous UgPhone page without clearing its cookies.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
-        webView.load(URLRequest(url: startURL))
+        var request = URLRequest(url: startURL)
+        request.cachePolicy = .useProtocolCachePolicy
+        request.timeoutInterval = 60
+
+        webView.load(request)
 
         return webView
     }
@@ -277,14 +256,26 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         context.coordinator.lastActive = isActive
 
-        let script = isActive
-            ? "window.__ugResumeMedia && window.__ugResumeMedia();"
-            : "window.__ugPauseMedia && window.__ugPauseMedia();"
+        let script: String
+
+        if isActive {
+            script = """
+            if (window.__ugResumeVideos) {
+                window.__ugResumeVideos();
+            }
+            """
+        } else {
+            script = """
+            if (window.__ugPauseVideos) {
+                window.__ugPauseVideos();
+            }
+            """
+        }
 
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
-    // MARK: Navigation and window handling
+    // MARK: Navigation delegate
 
     final class Coordinator: NSObject,
                              WKNavigationDelegate,
@@ -296,14 +287,14 @@ struct UgPhoneWebView: UIViewRepresentable {
             _ webView: WKWebView,
             didFinish navigation: WKNavigation!
         ) {
-            guard let currentURL = webView.url else {
+            guard let url = webView.url else {
                 return
             }
 
-            UgPhoneSession.saveURL(currentURL)
+            UgPhoneSession.saveURL(url)
         }
 
-        // Xử lý liên kết mở cửa sổ mới ngay trong cùng WebView.
+        // Handle links that request a new window in the same WebView.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
