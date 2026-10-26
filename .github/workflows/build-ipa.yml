@@ -1,3 +1,4 @@
+
 name: Build iOS IPA
 
 on:
@@ -15,6 +16,7 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 30
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -23,12 +25,15 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -version
+
           PROJECT_PATH="$(find . -type d -name 'UgCloudiOS.xcodeproj' -print -quit)"
+
           if [ -z "$PROJECT_PATH" ]; then
             echo 'ERROR: Could not find UgCloudiOS.xcodeproj. Repository files:'
             find . -maxdepth 5 -print | sort | head -300
             exit 1
           fi
+
           echo "PROJECT_PATH=$PROJECT_PATH" >> "$GITHUB_ENV"
           echo "Using project: $PROJECT_PATH"
           xcodebuild -list -project "$PROJECT_PATH"
@@ -36,6 +41,7 @@ jobs:
       - name: Build unsigned iOS app
         run: |
           set -o pipefail
+
           xcodebuild \
             -project "$PROJECT_PATH" \
             -scheme UgCloudiOS \
@@ -48,14 +54,73 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             build | tee "$RUNNER_TEMP/xcodebuild.log"
 
+      - name: Configure portrait orientation
+        run: |
+          set -euo pipefail
+
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/UgCloudiOS.app"
+          PLIST="$APP/Info.plist"
+
+          test -d "$APP" || {
+            echo "ERROR: App not found: $APP"
+            exit 1
+          }
+
+          test -f "$PLIST" || {
+            echo "ERROR: Info.plist not found: $PLIST"
+            exit 1
+          }
+
+          # Khóa hướng dọc cho iPhone trong riêng ứng dụng này.
+          /usr/libexec/PlistBuddy \
+            -c "Delete :UISupportedInterfaceOrientations" \
+            "$PLIST" 2>/dev/null || true
+
+          /usr/libexec/PlistBuddy \
+            -c "Add :UISupportedInterfaceOrientations array" \
+            "$PLIST"
+
+          /usr/libexec/PlistBuddy \
+            -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" \
+            "$PLIST"
+
+          # Nếu có cấu hình iPad, cũng chỉ cho phép hướng dọc.
+          /usr/libexec/PlistBuddy \
+            -c "Delete :UISupportedInterfaceOrientations~ipad" \
+            "$PLIST" 2>/dev/null || true
+
+          /usr/libexec/PlistBuddy \
+            -c "Add :UISupportedInterfaceOrientations~ipad array" \
+            "$PLIST"
+
+          /usr/libexec/PlistBuddy \
+            -c "Add :UISupportedInterfaceOrientations~ipad:0 string UIInterfaceOrientationPortrait" \
+            "$PLIST"
+
+          echo "Configured supported orientations:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :UISupportedInterfaceOrientations" \
+            "$PLIST"
+
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
+
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/UgCloudiOS.app"
-          test -d "$APP" || { echo "Build output not found: $APP"; exit 1; }
-          mkdir -p "$RUNNER_TEMP/ipa/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/UgCloudiOS.app"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/ipa/Payload" "$RUNNER_TEMP/UgCloudiOS-unsigned.ipa"
+          IPA_DIR="$RUNNER_TEMP/ipa"
+
+          test -d "$APP" || {
+            echo "Build output not found: $APP"
+            exit 1
+          }
+
+          mkdir -p "$IPA_DIR/Payload"
+          cp -R "$APP" "$IPA_DIR/Payload/UgCloudiOS.app"
+
+          /usr/bin/ditto \
+            -c -k --sequesterRsrc --keepParent \
+            "$IPA_DIR/Payload" \
+            "$RUNNER_TEMP/UgCloudiOS-unsigned.ipa"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -73,3 +138,4 @@ jobs:
           path: ${{ runner.temp }}/xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
+          
