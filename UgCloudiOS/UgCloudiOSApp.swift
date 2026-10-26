@@ -13,7 +13,7 @@ struct UgCloudiOSApp: App {
     }
 }
 
-// MARK: - Save last UgPhone page
+// MARK: - Session
 
 enum UgPhoneSession {
     private static let savedURLKey = "UgPhone.LastURL"
@@ -44,7 +44,7 @@ enum UgPhoneSession {
     }
 }
 
-// MARK: - Main screen
+// MARK: - Main Screen
 
 struct UgPhoneScreen: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -54,6 +54,7 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
+            // Khung dọc 9:16.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 16.0
@@ -62,22 +63,19 @@ struct UgPhoneScreen: View {
             let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
-                Color.black
-                    .ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
-                UgPhoneWebView(isActive: scenePhase == .active)
-                    .frame(
-                        width: screenWidth,
-                        height: screenHeight
-                    )
-                    .overlay {
-                        Rectangle()
-                            .stroke(Color.black, lineWidth: 1)
-                    }
-                    .position(
-                        x: availableWidth / 2,
-                        y: availableHeight / 2
-                    )
+                UgPhoneWebView(
+                    isActive: scenePhase == .active
+                )
+                .frame(
+                    width: screenWidth,
+                    height: screenHeight
+                )
+                .position(
+                    x: availableWidth / 2,
+                    y: availableHeight / 2
+                )
             }
             .frame(
                 width: availableWidth,
@@ -90,7 +88,7 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - UgPhone WebView
+// MARK: - WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
     let isActive: Bool
@@ -106,10 +104,8 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Preserve cookies and website login data.
+        // Duy trì cookie và dữ liệu đăng nhập.
         configuration.websiteDataStore = .default()
-
-        // Allow inline playback when supported by UgPhone.
         configuration.allowsInlineMediaPlayback = true
 
         let contentController = WKUserContentController()
@@ -119,76 +115,66 @@ struct UgPhoneWebView: UIViewRepresentable {
             if (window.__ugCloudInstalled) return;
             window.__ugCloudInstalled = true;
 
-            function addOptimizationStyle() {
-                if (!document.documentElement) return;
+            var style = document.createElement('style');
 
-                if (!document.getElementById('ug-cloud-style')) {
-                    var style = document.createElement('style');
-                    style.id = 'ug-cloud-style';
-
-                    style.textContent = `
-                        html, body {
-                            overscroll-behavior: none !important;
-                        }
-
-                        ::-webkit-scrollbar {
-                            width: 0 !important;
-                            height: 0 !important;
-                        }
-
-                        html {
-                            scroll-behavior: auto !important;
-                        }
-                    `;
-
-                    (document.head || document.documentElement)
-                        .appendChild(style);
+            style.textContent = `
+                html {
+                    overscroll-behavior: none !important;
+                    scroll-behavior: auto !important;
                 }
 
-                var meta = document.querySelector(
-                    'meta[name="viewport"]'
-                );
-
-                if (!meta && document.head) {
-                    meta = document.createElement('meta');
-                    meta.name = 'viewport';
-                    document.head.appendChild(meta);
+                body {
+                    overscroll-behavior: none !important;
                 }
 
-                if (meta) {
-                    meta.content =
-                        'width=device-width, initial-scale=1.0, ' +
-                        'maximum-scale=1.0, user-scalable=no';
+                ::-webkit-scrollbar {
+                    width: 0 !important;
+                    height: 0 !important;
                 }
+            `;
+
+            (document.head || document.documentElement)
+                .appendChild(style);
+
+            var viewport = document.querySelector(
+                'meta[name="viewport"]'
+            );
+
+            if (!viewport && document.head) {
+                viewport = document.createElement('meta');
+                viewport.name = 'viewport';
+                document.head.appendChild(viewport);
             }
 
-            addOptimizationStyle();
+            if (viewport) {
+                viewport.content =
+                    'width=device-width, initial-scale=1.0, ' +
+                    'maximum-scale=1.0, user-scalable=no';
+            }
 
-            // Pause HTML videos when the app enters the background.
-            window.__ugPauseVideos = function() {
-                document.querySelectorAll('video').forEach(function(video) {
-                    video.dataset.ugWasPlaying =
-                        (!video.paused && !video.ended) ? '1' : '0';
+            window.__ugPauseMedia = function() {
+                document.querySelectorAll('video').forEach(function(v) {
+                    v.dataset.ugWasPlaying =
+                        (!v.paused && !v.ended) ? '1' : '0';
 
-                    if (!video.paused) {
-                        video.pause();
+                    if (!v.paused) {
+                        v.pause();
                     }
                 });
             };
 
-            // Resume only videos that were playing before backgrounding.
-            window.__ugResumeVideos = function() {
-                document.querySelectorAll('video').forEach(function(video) {
-                    if (video.dataset.ugWasPlaying === '1') {
-                        delete video.dataset.ugWasPlaying;
+            window.__ugResumeMedia = function() {
+                document.querySelectorAll('video').forEach(function(v) {
+                    if (v.dataset.ugWasPlaying === '1') {
+                        delete v.dataset.ugWasPlaying;
 
-                        var promise = video.play();
+                        var result = v.play();
 
-                        if (promise && promise.catch) {
-                            promise.catch(function() {});
+                        if (result && result.catch) {
+                            result.catch(function() {});
                         }
                     } else {
-                        delete video.dataset.ugWasPlaying;
+                        delete v.dataset.ugWasPlaying;
                     }
                 });
             };
@@ -213,8 +199,6 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Keep the original touch events available to the webpage.
-        // Disable outer-page scrolling without adding touch interceptors.
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -228,20 +212,14 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
-        // Do not rasterize dynamic content such as video.
         webView.layer.shouldRasterize = false
         webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
         context.coordinator.lastActive = isActive
 
-        // Restore the previous UgPhone page without clearing its cookies.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
-        var request = URLRequest(url: startURL)
-        request.cachePolicy = .useProtocolCachePolicy
-        request.timeoutInterval = 60
-
-        webView.load(request)
+        webView.load(URLRequest(url: startURL))
 
         return webView
     }
@@ -256,26 +234,17 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         context.coordinator.lastActive = isActive
 
-        let script: String
+        let script = isActive
+            ? "window.__ugResumeMedia && window.__ugResumeMedia();"
+            : "window.__ugPauseMedia && window.__ugPauseMedia();"
 
-        if isActive {
-            script = """
-            if (window.__ugResumeVideos) {
-                window.__ugResumeVideos();
-            }
-            """
-        } else {
-            script = """
-            if (window.__ugPauseVideos) {
-                window.__ugPauseVideos();
-            }
-            """
-        }
-
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        webView.evaluateJavaScript(
+            script,
+            completionHandler: nil
+        )
     }
 
-    // MARK: Navigation delegate
+    // MARK: - Navigation
 
     final class Coordinator: NSObject,
                              WKNavigationDelegate,
@@ -294,18 +263,20 @@ struct UgPhoneWebView: UIViewRepresentable {
             UgPhoneSession.saveURL(url)
         }
 
-        // Handle links that request a new window in the same WebView.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            if navigationAction.targetFrame == nil,
-               let url = navigationAction.request.url {
-                webView.load(URLRequest(url: url))
+            guard
+                navigationAction.targetFrame == nil,
+                let url = navigationAction.request.url
+            else {
+                return nil
             }
 
+            webView.load(URLRequest(url: url))
             return nil
         }
 
