@@ -73,10 +73,10 @@ struct UgPhoneScreen: View {
                     width: screenWidth,
                     height: screenHeight
                 )
-                // Bo 4 góc, bán kính 6 points.
+                // Bo 4 góc, bán kính 8 points.
                 .clipShape(
                     RoundedRectangle(
-                        cornerRadius: 6,
+                        cornerRadius: 8,
                         style: .continuous
                     )
                 )
