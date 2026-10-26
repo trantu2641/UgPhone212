@@ -54,7 +54,7 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Khung dọc 9:16.
+            // Giữ khung hiển thị dọc 9:16.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 16.0
@@ -63,7 +63,8 @@ struct UgPhoneScreen: View {
             let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color.black
+                    .ignoresSafeArea()
 
                 UgPhoneWebView(
                     isActive: scenePhase == .active
@@ -71,6 +72,13 @@ struct UgPhoneScreen: View {
                 .frame(
                     width: screenWidth,
                     height: screenHeight
+                )
+                // Bo 4 góc, bán kính 6 points.
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 6,
+                        style: .continuous
+                    )
                 )
                 .position(
                     x: availableWidth / 2,
@@ -88,7 +96,7 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - WebView
+// MARK: - UgPhone WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
     let isActive: Bool
@@ -104,7 +112,7 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Duy trì cookie và dữ liệu đăng nhập.
+        // Giữ cookie và phiên đăng nhập website.
         configuration.websiteDataStore = .default()
         configuration.allowsInlineMediaPlayback = true
 
@@ -115,66 +123,80 @@ struct UgPhoneWebView: UIViewRepresentable {
             if (window.__ugCloudInstalled) return;
             window.__ugCloudInstalled = true;
 
-            var style = document.createElement('style');
+            function installStyle() {
+                if (!document.documentElement) return;
 
-            style.textContent = `
-                html {
-                    overscroll-behavior: none !important;
-                    scroll-behavior: auto !important;
+                if (!document.getElementById('ug-cloud-style')) {
+                    var style = document.createElement('style');
+                    style.id = 'ug-cloud-style';
+
+                    style.textContent = `
+                        html {
+                            overscroll-behavior: none !important;
+                            scroll-behavior: auto !important;
+                        }
+
+                        body {
+                            overscroll-behavior: none !important;
+                        }
+
+                        ::-webkit-scrollbar {
+                            width: 0 !important;
+                            height: 0 !important;
+                        }
+                    `;
+
+                    (document.head || document.documentElement)
+                        .appendChild(style);
                 }
 
-                body {
-                    overscroll-behavior: none !important;
+                var viewport = document.querySelector(
+                    'meta[name="viewport"]'
+                );
+
+                if (!viewport && document.head) {
+                    viewport = document.createElement('meta');
+                    viewport.name = 'viewport';
+
+                    if (document.head) {
+                        document.head.appendChild(viewport);
+                    }
                 }
 
-                ::-webkit-scrollbar {
-                    width: 0 !important;
-                    height: 0 !important;
+                if (viewport) {
+                    viewport.content =
+                        'width=device-width, initial-scale=1.0, ' +
+                        'maximum-scale=1.0, user-scalable=no';
                 }
-            `;
-
-            (document.head || document.documentElement)
-                .appendChild(style);
-
-            var viewport = document.querySelector(
-                'meta[name="viewport"]'
-            );
-
-            if (!viewport && document.head) {
-                viewport = document.createElement('meta');
-                viewport.name = 'viewport';
-                document.head.appendChild(viewport);
             }
 
-            if (viewport) {
-                viewport.content =
-                    'width=device-width, initial-scale=1.0, ' +
-                    'maximum-scale=1.0, user-scalable=no';
-            }
+            installStyle();
 
+            // Tạm dừng video HTML khi app chuyển xuống nền.
             window.__ugPauseMedia = function() {
-                document.querySelectorAll('video').forEach(function(v) {
-                    v.dataset.ugWasPlaying =
-                        (!v.paused && !v.ended) ? '1' : '0';
+                document.querySelectorAll('video').forEach(function(video) {
+                    video.dataset.ugWasPlaying =
+                        (!video.paused && !video.ended) ? '1' : '0';
 
-                    if (!v.paused) {
-                        v.pause();
+                    if (!video.paused) {
+                        video.pause();
                     }
                 });
             };
 
+            // Khôi phục video nếu trước đó đang phát.
             window.__ugResumeMedia = function() {
-                document.querySelectorAll('video').forEach(function(v) {
-                    if (v.dataset.ugWasPlaying === '1') {
-                        delete v.dataset.ugWasPlaying;
+                document.querySelectorAll('video').forEach(function(video) {
+                    if (video.dataset.ugWasPlaying === '1') {
+                        delete video.dataset.ugWasPlaying;
 
-                        var result = v.play();
+                        var result = video.play();
 
                         if (result && result.catch) {
                             result.catch(function() {});
                         }
                     } else {
-                        delete v.dataset.ugWasPlaying;
+                        delete video.dataset.ugWasPlaying;
                     }
                 });
             };
@@ -199,6 +221,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
+        // Không cuộn trang ngoài khung cloud phone.
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -212,12 +235,14 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
+        // Không rasterize toàn bộ trang động.
         webView.layer.shouldRasterize = false
         webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
         context.coordinator.lastActive = isActive
 
+        // Mở trang đã lưu hoặc trang chủ nếu chưa có.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
         webView.load(URLRequest(url: startURL))
 
@@ -263,6 +288,7 @@ struct UgPhoneWebView: UIViewRepresentable {
             UgPhoneSession.saveURL(url)
         }
 
+        // Mở liên kết cửa sổ mới trong cùng WebView.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
