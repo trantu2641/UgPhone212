@@ -1,6 +1,8 @@
 import SwiftUI
 import WebKit
 
+// MARK: - App
+
 @main
 struct UgCloudiOSApp: App {
     var body: some Scene {
@@ -12,52 +14,15 @@ struct UgCloudiOSApp: App {
     }
 }
 
-// MARK: - Session
-
-enum UgPhoneSession {
-    private static let savedURLKey = "ChaGPT.LastURL"
-
-    static func savedURL() -> URL? {
-        guard
-            let value = UserDefaults.standard.string(forKey: savedURLKey),
-            let url = URL(string: value),
-            let host = url.host,
-            isUgPhoneHost(host)
-        else {
-            return nil
-        }
-
-        return url
-    }
-
-    static func saveURL(_ url: URL) {
-        guard let host = url.host, isUgPhoneHost(host) else {
-            return
-        }
-
-        UserDefaults.standard.set(
-            url.absoluteString,
-            forKey: savedURLKey
-        )
-    }
-
-    private static func isUgPhoneHost(_ host: String) -> Bool {
-        host == "chatgpt.com" ||
-        host.hasSuffix(".chatgpt.com")
-    }
-}
-
 // MARK: - Main Screen
 
 struct UgPhoneScreen: View {
-    @Environment(\.scenePhase) private var scenePhase
-
     var body: some View {
         GeometryReader { geometry in
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Khung hiển thị dọc.
+            // Khung dọc tỷ lệ 9:17.5.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 17.5
@@ -69,23 +34,21 @@ struct UgPhoneScreen: View {
                 Color.black
                     .ignoresSafeArea()
 
-                UgPhoneWebView(
-                    isActive: scenePhase == .active
-                )
-                .frame(
-                    width: screenWidth,
-                    height: screenHeight
-                )
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: 8,
-                        style: .continuous
+                UgPhoneWebView()
+                    .frame(
+                        width: screenWidth,
+                        height: screenHeight
                     )
-                )
-                .position(
-                    x: availableWidth / 2,
-                    y: availableHeight / 2
-                )
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 8,
+                            style: .continuous
+                        )
+                    )
+                    .position(
+                        x: availableWidth / 2,
+                        y: availableHeight / 2
+                    )
             }
             .frame(
                 width: availableWidth,
@@ -98,10 +61,9 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - UgPhone WebView
+// MARK: - ChatGPT WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
-    let isActive: Bool
 
     private let homeURL = URL(
         string: "https://chatgpt.com/"
@@ -114,89 +76,74 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Sử dụng kho dữ liệu mặc định để duy trì cookie.
+        // Duy trì cookie đăng nhập.
         configuration.websiteDataStore = .default()
 
+        // Hỗ trợ nội dung đa phương tiện.
         configuration.allowsInlineMediaPlayback = true
 
-        let contentController = WKUserContentController()
-
-        let optimizationScript = """
+        // CSS giữ thanh điều hướng ở trên cùng.
+        let navigationStyle = """
         (function() {
-            if (window.__ugCloudInstalled) return;
-            window.__ugCloudInstalled = true;
+            if (window.__ugNavigationStyleInstalled) return;
+            window.__ugNavigationStyleInstalled = true;
 
-            function installStyle() {
-                if (!document.documentElement) return;
+            var style = document.createElement('style');
 
-                if (!document.getElementById('ug-cloud-style')) {
-                    var style = document.createElement('style');
+            style.id = 'ug-chatgpt-navigation-style';
 
-                    style.id = 'ug-cloud-style';
-
-                    style.textContent = `
-                        html {
-                            overscroll-behavior: none !important;
-                            scroll-behavior: auto !important;
-                        }
-
-                        body {
-                            overscroll-behavior: none !important;
-                        }
-
-                        ::-webkit-scrollbar {
-                            width: 0 !important;
-                            height: 0 !important;
-                        }
-                    `;
-
-                    (document.head || document.documentElement)
-                        .appendChild(style);
+            style.textContent = `
+                html {
+                    background: #000 !important;
                 }
-            }
 
-            installStyle();
+                body {
+                    background: #000 !important;
+                }
 
-            // Tạm dừng video khi ứng dụng xuống nền.
-            window.__ugPauseMedia = function() {
-                document.querySelectorAll('video').forEach(function(video) {
-                    video.dataset.ugWasPlaying =
-                        (!video.paused && !video.ended) ? '1' : '0';
+                /*
+                 Giữ thanh điều hướng chính ở trên cùng.
+                 Không áp dụng position: fixed cho mọi phần tử
+                 để tránh làm hỏng bố cục trang.
+                */
+                header,
+                [data-testid="conversation-header"],
+                [data-testid="mobile-header"] {
+                    position: sticky !important;
+                    top: 0 !important;
+                    z-index: 9999 !important;
+                    background-color: #000 !important;
+                }
 
-                    if (!video.paused) {
-                        video.pause();
-                    }
-                });
-            };
+                /*
+                 Giữ thanh điều hướng nằm phía trên nội dung
+                 trong trường hợp trang sử dụng header sticky.
+                */
+                header a,
+                header button {
+                    -webkit-tap-highlight-color: transparent;
+                }
 
-            // Khôi phục video khi ứng dụng hoạt động trở lại.
-            window.__ugResumeMedia = function() {
-                document.querySelectorAll('video').forEach(function(video) {
-                    if (video.dataset.ugWasPlaying === '1') {
-                        delete video.dataset.ugWasPlaying;
+                ::-webkit-scrollbar {
+                    width: 0 !important;
+                    height: 0 !important;
+                }
+            `;
 
-                        var result = video.play();
-
-                        if (result && result.catch) {
-                            result.catch(function() {});
-                        }
-                    } else {
-                        delete video.dataset.ugWasPlaying;
-                    }
-                });
-            };
+            (document.head || document.documentElement)
+                .appendChild(style);
         })();
         """
 
-        contentController.addUserScript(
-            WKUserScript(
-                source: optimizationScript,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            )
+        let userScript = WKUserScript(
+            source: navigationStyle,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
         )
 
-        configuration.userContentController = contentController
+        configuration.userContentController.addUserScript(
+            userScript
+        )
 
         let webView = WKWebView(
             frame: .zero,
@@ -206,37 +153,26 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Đảm bảo WebView nhận thao tác chạm.
+        // Cảm ứng.
         webView.isUserInteractionEnabled = true
-        webView.scrollView.isUserInteractionEnabled = true
         webView.isMultipleTouchEnabled = true
 
-        // Giữ nguyên khả năng cuộn và thao tác của website.
+        // Cuộn trang.
         webView.scrollView.isScrollEnabled = true
-        webView.scrollView.bounces = false
-        webView.scrollView.alwaysBounceVertical = false
-        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.bounces = true
         webView.scrollView.showsVerticalScrollIndicator = false
         webView.scrollView.showsHorizontalScrollIndicator = false
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.contentInsetAdjustmentBehavior = .automatic
 
+        // Nền tối.
         webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
-        // Không rasterize trang web động.
-        webView.layer.shouldRasterize = false
-        webView.scrollView.layer.shouldRasterize = false
-
-        context.coordinator.webView = webView
-        context.coordinator.lastActive = isActive
-
-        // Mở URL đã lưu hoặc trang chủ.
-        let startURL = UgPhoneSession.savedURL() ?? homeURL
-
+        // Tải ChatGPT.
         webView.load(
             URLRequest(
-                url: startURL,
+                url: homeURL,
                 cachePolicy: .useProtocolCachePolicy,
                 timeoutInterval: 60
             )
@@ -249,42 +185,14 @@ struct UgPhoneWebView: UIViewRepresentable {
         _ webView: WKWebView,
         context: Context
     ) {
-        guard context.coordinator.lastActive != isActive else {
-            return
-        }
-
-        context.coordinator.lastActive = isActive
-
-        let script = isActive
-            ? "window.__ugResumeMedia && window.__ugResumeMedia();"
-            : "window.__ugPauseMedia && window.__ugPauseMedia();"
-
-        webView.evaluateJavaScript(
-            script,
-            completionHandler: nil
-        )
+        // Không tải lại trang khi SwiftUI cập nhật.
     }
 
-    // MARK: - Navigation Coordinator
+    // MARK: - Coordinator
 
     final class Coordinator: NSObject,
                              WKNavigationDelegate,
                              WKUIDelegate {
-
-        weak var webView: WKWebView?
-        var lastActive: Bool?
-
-        // Lưu URL sau khi tải trang thành công.
-        func webView(
-            _ webView: WKWebView,
-            didFinish navigation: WKNavigation!
-        ) {
-            guard let url = webView.url else {
-                return
-            }
-
-            UgPhoneSession.saveURL(url)
-        }
 
         // Mở liên kết target="_blank" trong cùng WebView.
         func webView(
@@ -302,12 +210,14 @@ struct UgPhoneWebView: UIViewRepresentable {
                 return nil
             }
 
-            webView.load(URLRequest(url: url))
+            webView.load(
+                URLRequest(url: url)
+            )
 
             return nil
         }
 
-        // Cho phép điều hướng thông thường.
+        // Cho phép điều hướng.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
@@ -316,24 +226,25 @@ struct UgPhoneWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
 
-        // Theo dõi lỗi tải trang để thuận tiện kiểm tra.
+        // Lỗi điều hướng.
         func webView(
             _ webView: WKWebView,
             didFail navigation: WKNavigation!,
             withError error: Error
         ) {
             print(
-                "UgCloud WebView navigation error: \(error.localizedDescription)"
+                "ChatGPT navigation error: \(error.localizedDescription)"
             )
         }
 
+        // Lỗi tải trang.
         func webView(
             _ webView: WKWebView,
             didFailProvisionalNavigation navigation: WKNavigation!,
             withError error: Error
         ) {
             print(
-                "UgCloud WebView loading error: \(error.localizedDescription)"
+                "ChatGPT loading error: \(error.localizedDescription)"
             )
         }
     }
