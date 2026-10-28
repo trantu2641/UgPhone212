@@ -1,4 +1,3 @@
-
 import SwiftUI
 import WebKit
 
@@ -36,11 +35,15 @@ enum UgPhoneSession {
             return
         }
 
-        UserDefaults.standard.set(url.absoluteString, forKey: savedURLKey)
+        UserDefaults.standard.set(
+            url.absoluteString,
+            forKey: savedURLKey
+        )
     }
 
     private static func isUgPhoneHost(_ host: String) -> Bool {
-        host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
+        host == "chatgpt.com" ||
+        host.hasSuffix(".chatgpt.com")
     }
 }
 
@@ -54,7 +57,7 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Giữ khung hiển thị dọc 9:16.
+            // Khung hiển thị dọc.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 17.5
@@ -73,7 +76,6 @@ struct UgPhoneScreen: View {
                     width: screenWidth,
                     height: screenHeight
                 )
-                // Bo 4 góc, bán kính 8 points.
                 .clipShape(
                     RoundedRectangle(
                         cornerRadius: 8,
@@ -102,7 +104,7 @@ struct UgPhoneWebView: UIViewRepresentable {
     let isActive: Bool
 
     private let homeURL = URL(
-        string: "https://www.chatgpt.com/"
+        string: "https://chatgpt.com/"
     )!
 
     func makeCoordinator() -> Coordinator {
@@ -112,8 +114,9 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Giữ cookie và phiên đăng nhập website.
+        // Sử dụng kho dữ liệu mặc định để duy trì cookie.
         configuration.websiteDataStore = .default()
+
         configuration.allowsInlineMediaPlayback = true
 
         let contentController = WKUserContentController()
@@ -128,6 +131,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
                 if (!document.getElementById('ug-cloud-style')) {
                     var style = document.createElement('style');
+
                     style.id = 'ug-cloud-style';
 
                     style.textContent = `
@@ -149,30 +153,11 @@ struct UgPhoneWebView: UIViewRepresentable {
                     (document.head || document.documentElement)
                         .appendChild(style);
                 }
-
-                var viewport = document.querySelector(
-                    'meta[name="viewport"]'
-                );
-
-                if (!viewport && document.head) {
-                    viewport = document.createElement('meta');
-                    viewport.name = 'viewport';
-
-                    if (document.head) {
-                        document.head.appendChild(viewport);
-                    }
-                }
-
-                if (viewport) {
-                    viewport.content =
-                        'width=device-width, initial-scale=1.0, ' +
-                        'maximum-scale=1.0, user-scalable=no';
-                }
             }
 
             installStyle();
 
-            // Tạm dừng video HTML khi app chuyển xuống nền.
+            // Tạm dừng video khi ứng dụng xuống nền.
             window.__ugPauseMedia = function() {
                 document.querySelectorAll('video').forEach(function(video) {
                     video.dataset.ugWasPlaying =
@@ -184,7 +169,7 @@ struct UgPhoneWebView: UIViewRepresentable {
                 });
             };
 
-            // Khôi phục video nếu trước đó đang phát.
+            // Khôi phục video khi ứng dụng hoạt động trở lại.
             window.__ugResumeMedia = function() {
                 document.querySelectorAll('video').forEach(function(video) {
                     if (video.dataset.ugWasPlaying === '1') {
@@ -221,30 +206,41 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Không cuộn trang ngoài khung cloud phone.
-        //webView.scrollView.isScrollEnabled = false
-        //webView.scrollView.bounces = false
-        //webView.scrollView.alwaysBounceVertical = false
-        //webView.scrollView.alwaysBounceHorizontal = false
-        //webView.scrollView.showsVerticalScrollIndicator = false
-        //webView.scrollView.showsHorizontalScrollIndicator = false
-        //webView.scrollView.pinchGestureRecognizer?.isEnabled = false
-        //webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Đảm bảo WebView nhận thao tác chạm.
+        webView.isUserInteractionEnabled = true
+        webView.scrollView.isUserInteractionEnabled = true
+        webView.isMultipleTouchEnabled = true
 
-        //webView.isOpaque = true
+        // Giữ nguyên khả năng cuộn và thao tác của website.
+        webView.scrollView.isScrollEnabled = true
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.showsVerticalScrollIndicator = false
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+
+        webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
-        // Không rasterize toàn bộ trang động.
-        //webView.layer.shouldRasterize = false
-        //webView.scrollView.layer.shouldRasterize = false
+        // Không rasterize trang web động.
+        webView.layer.shouldRasterize = false
+        webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
         context.coordinator.lastActive = isActive
 
-        // Mở trang đã lưu hoặc trang chủ nếu chưa có.
+        // Mở URL đã lưu hoặc trang chủ.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
-        webView.load(URLRequest(url: startURL))
+
+        webView.load(
+            URLRequest(
+                url: startURL,
+                cachePolicy: .useProtocolCachePolicy,
+                timeoutInterval: 60
+            )
+        )
 
         return webView
     }
@@ -269,14 +265,16 @@ struct UgPhoneWebView: UIViewRepresentable {
         )
     }
 
-    // MARK: - Navigation
+    // MARK: - Navigation Coordinator
 
     final class Coordinator: NSObject,
                              WKNavigationDelegate,
                              WKUIDelegate {
+
         weak var webView: WKWebView?
         var lastActive: Bool?
 
+        // Lưu URL sau khi tải trang thành công.
         func webView(
             _ webView: WKWebView,
             didFinish navigation: WKNavigation!
@@ -288,30 +286,55 @@ struct UgPhoneWebView: UIViewRepresentable {
             UgPhoneSession.saveURL(url)
         }
 
-        // Mở liên kết cửa sổ mới trong cùng WebView.
+        // Mở liên kết target="_blank" trong cùng WebView.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            guard
-                navigationAction.targetFrame == nil,
-                let url = navigationAction.request.url
-            else {
+
+            guard navigationAction.targetFrame == nil else {
+                return nil
+            }
+
+            guard let url = navigationAction.request.url else {
                 return nil
             }
 
             webView.load(URLRequest(url: url))
+
             return nil
         }
 
+        // Cho phép điều hướng thông thường.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             decisionHandler(.allow)
+        }
+
+        // Theo dõi lỗi tải trang để thuận tiện kiểm tra.
+        func webView(
+            _ webView: WKWebView,
+            didFail navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            print(
+                "UgCloud WebView navigation error: \(error.localizedDescription)"
+            )
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            print(
+                "UgCloud WebView loading error: \(error.localizedDescription)"
+            )
         }
     }
 }
