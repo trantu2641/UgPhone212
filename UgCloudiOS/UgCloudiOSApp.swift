@@ -57,10 +57,10 @@ struct UgPhoneScreen: View {
             // Giữ khung hiển thị dọc 9:16.
             let screenWidth = min(
                 availableWidth,
-                availableHeight * 9.0 / 18.0
+                availableHeight * 9.0 / 17.5
             )
 
-            let screenHeight = screenWidth * 18.0 / 9.0
+            let screenHeight = screenWidth * 17.5 / 9.0
 
             ZStack {
                 Color.black
@@ -231,13 +231,13 @@ struct UgPhoneWebView: UIViewRepresentable {
         //webView.scrollView.pinchGestureRecognizer?.isEnabled = false
         //webView.scrollView.contentInsetAdjustmentBehavior = .never
 
-        webView.isOpaque = true
+        //webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
         // Không rasterize toàn bộ trang động.
-        webView.layer.shouldRasterize = false
-        webView.scrollView.layer.shouldRasterize = false
+        //webView.layer.shouldRasterize = false
+        //webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
         context.coordinator.lastActive = isActive
