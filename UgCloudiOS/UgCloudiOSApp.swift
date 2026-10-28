@@ -8,7 +8,7 @@ struct UgCloudiOSApp: App {
         WindowGroup {
             UgPhoneScreen()
                 .preferredColorScheme(.dark)
-                .statusBarHidden(true)
+                .statusBarHidden(false)
         }
     }
 }
@@ -16,7 +16,7 @@ struct UgCloudiOSApp: App {
 // MARK: - Session
 
 enum UgPhoneSession {
-    private static let savedURLKey = "UgPhone.LastURL"
+    private static let savedURLKey = "ChaGPT.LastURL"
 
     static func savedURL() -> URL? {
         guard
@@ -40,7 +40,7 @@ enum UgPhoneSession {
     }
 
     private static func isUgPhoneHost(_ host: String) -> Bool {
-        host == "ugphone.com" || host.hasSuffix(".ugphone.com")
+        host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
     }
 }
 
@@ -102,7 +102,7 @@ struct UgPhoneWebView: UIViewRepresentable {
     let isActive: Bool
 
     private let homeURL = URL(
-        string: "https://www.ugphone.com/"
+        string: "https://www.chatgpt.com/"
     )!
 
     func makeCoordinator() -> Coordinator {
