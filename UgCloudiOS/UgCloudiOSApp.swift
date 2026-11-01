@@ -54,13 +54,13 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Giữ nguyên tỷ lệ 9:17.5.
+            // Giữ nguyên tỷ lệ 9:17.5
             let screenWidth = min(
                 availableWidth,
-                availableHeight * 9.0 / 16.0
+                availableHeight * 9.0 / 17.5
             )
 
-            let screenHeight = screenWidth * 16.0 / 9.0
+            let screenHeight = screenWidth * 17.5 / 9.0
 
             ZStack {
                 Color.black
@@ -111,101 +111,21 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Giữ cookie và phiên đăng nhập.
+        // Giữ cookie và phiên đăng nhập
         configuration.websiteDataStore = .default()
         configuration.allowsInlineMediaPlayback = true
 
         let contentController = WKUserContentController()
 
-        // MARK: JavaScript FPS and image optimization
+        // MARK: - Web optimization
 
         let optimizationScript = """
         (function() {
             if (window.__ugCloudInstalled) return;
             window.__ugCloudInstalled = true;
 
-            // =========================================
-            // FPS LIMITER: 30 FPS
-            // =========================================
-
-            (function() {
-                var nativeRAF =
-                    window.requestAnimationFrame.bind(window);
-
-                var nativeCancelRAF =
-                    window.cancelAnimationFrame.bind(window);
-
-                var targetFPS = 30;
-                var frameDuration = 1000 / targetFPS;
-
-                var nextID = 1;
-                var callbacks = new Map();
-
-                var scheduled = false;
-                var lastFrameTime = 0;
-
-                function scheduleFrame() {
-                    if (scheduled || callbacks.size === 0) {
-                        return;
-                    }
-
-                    scheduled = true;
-
-                    nativeRAF(function(timestamp) {
-                        scheduled = false;
-
-                        var shouldRender =
-                            lastFrameTime === 0 ||
-                            timestamp - lastFrameTime >= frameDuration;
-
-                        if (shouldRender) {
-                            lastFrameTime = timestamp;
-
-                            var currentCallbacks =
-                                Array.from(callbacks.entries());
-
-                            callbacks.clear();
-
-                            currentCallbacks.forEach(function(entry) {
-                                var callback = entry[1];
-
-                                try {
-                                    callback(timestamp);
-                                } catch(error) {
-                                    setTimeout(function() {
-                                        throw error;
-                                    }, 0);
-                                }
-                            });
-                        }
-
-                        scheduleFrame();
-                    });
-                }
-
-                window.requestAnimationFrame = function(callback) {
-                    var id = nextID++;
-
-                    callbacks.set(id, callback);
-                    scheduleFrame();
-
-                    return id;
-                };
-
-                window.cancelAnimationFrame = function(id) {
-                    callbacks.delete(id);
-                    nativeCancelRAF(id);
-                };
-
-                window.__ugFPSController = {
-                    targetFPS: 30,
-                    frameDuration: frameDuration
-                };
-            })();
-
-            // =========================================
-            // COLOR OPTIMIZATION
-            // =========================================
+            // Không ghi đè requestAnimationFrame.
+            // Để WebKit tự điều phối tốc độ hiển thị.
 
             function installStyle() {
                 if (!document.documentElement) return;
@@ -215,7 +135,6 @@ struct UgPhoneWebView: UIViewRepresentable {
                 }
 
                 var style = document.createElement('style');
-
                 style.id = 'ug-cloud-style';
 
                 style.textContent = `
@@ -234,9 +153,7 @@ struct UgPhoneWebView: UIViewRepresentable {
                     }
 
                     canvas {
-                        filter:
-                            saturate(1.13)
-                            contrast(1.17);
+                        filter: saturate(1.13) contrast(1.17);
                     }
                 `;
 
@@ -262,9 +179,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
             installStyle();
 
-            // =========================================
-            // BACKGROUND VIDEO MANAGEMENT
-            // =========================================
+            // MARK: - Background video management
 
             window.__ugPauseMedia = function() {
                 document.querySelectorAll('video').forEach(function(video) {
@@ -305,7 +220,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         configuration.userContentController = contentController
 
-        // MARK: Create WebView
+        // MARK: - Create WebView
 
         let webView = WKWebView(
             frame: .zero,
@@ -315,7 +230,8 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Giữ khả năng điều khiển cảm ứng.
+        // Giữ khả năng điều khiển cảm ứng
+
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -335,7 +251,8 @@ struct UgPhoneWebView: UIViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.lastActive = isActive
 
-        // Khôi phục trang gần nhất.
+        // Khôi phục trang gần nhất
+
         let startURL = UgPhoneSession.savedURL() ?? homeURL
 
         webView.load(
