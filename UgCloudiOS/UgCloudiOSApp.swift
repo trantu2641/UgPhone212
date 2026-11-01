@@ -1,6 +1,7 @@
 
 import SwiftUI
 import WebKit
+import QuartzCore
 
 @main
 struct UgCloudiOSApp: App {
@@ -54,13 +55,12 @@ struct UgPhoneScreen: View {
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Giữ nguyên tỷ lệ 9:17.5
             let screenWidth = min(
                 availableWidth,
-                availableHeight * 9.0 / 16.0
+                availableHeight * 9.0 / 17.5
             )
 
-            let screenHeight = screenWidth * 16.0 / 9.0
+            let screenHeight = screenWidth * 17.5 / 9.0
 
             ZStack {
                 Color.black
@@ -117,15 +117,15 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         let contentController = WKUserContentController()
 
-        // MARK: - Web optimization
+        // MARK: JavaScript optimization
 
         let optimizationScript = """
         (function() {
             if (window.__ugCloudInstalled) return;
             window.__ugCloudInstalled = true;
 
-            // Không ghi đè requestAnimationFrame.
-            // Để WebKit tự điều phối tốc độ hiển thị.
+            // Không can thiệp requestAnimationFrame.
+            // Không chặn luồng hình ảnh hoặc cảm ứng.
 
             function installStyle() {
                 if (!document.documentElement) return;
@@ -179,7 +179,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
             installStyle();
 
-            // MARK: - Background video management
+            // MARK: Background media
 
             window.__ugPauseMedia = function() {
                 document.querySelectorAll('video').forEach(function(video) {
@@ -220,7 +220,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         configuration.userContentController = contentController
 
-        // MARK: - Create WebView
+        // MARK: Create WebView
 
         let webView = WKWebView(
             frame: .zero,
@@ -230,7 +230,11 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Giữ khả năng điều khiển cảm ứng
+        // MARK: Display frame rate experiment
+
+        installFrameRateHint(on: webView)
+
+        // MARK: Touch configuration
 
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
@@ -260,6 +264,39 @@ struct UgPhoneWebView: UIViewRepresentable {
         )
 
         return webView
+    }
+
+    // MARK: - Core Animation frame rate
+
+    private func installFrameRateHint(on webView: WKWebView) {
+        guard #available(iOS 15.0, *) else {
+            return
+        }
+
+        let animation = CABasicAnimation(
+            keyPath: "transform.rotation.z"
+        )
+
+        animation.fromValue = 0.0
+        animation.toValue = 0.000001
+        animation.duration = 1.0 / 30.0
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        animation.isAdditive = true
+        animation.timingFunction = CAMediaTimingFunction(
+            name: .linear
+        )
+
+        animation.preferredFrameRateRange = CAFrameRateRange(
+            minimum: 30,
+            maximum: 30,
+            preferred: 30
+        )
+
+        webView.layer.add(
+            animation,
+            forKey: "UgCloud.FrameRateHint"
+        )
     }
 
     // MARK: - App lifecycle
