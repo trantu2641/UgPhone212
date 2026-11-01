@@ -1,28 +1,69 @@
+
 import SwiftUI
 import WebKit
-
-// MARK: - App
+import UIKit
 
 @main
 struct UgCloudiOSApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             UgPhoneScreen()
                 .preferredColorScheme(.dark)
-                .statusBarHidden(false)
+                .statusBarHidden(true)
+                .onChange(of: scenePhase) { phase in
+                    if phase == .active {
+                        print("UgCloudiOS: App active")
+                    }
+                }
         }
+    }
+}
+
+// MARK: - Session
+
+enum UgPhoneSession {
+    private static let savedURLKey = "UgPhone.LastURL"
+
+    static func savedURL() -> URL? {
+        guard
+            let value = UserDefaults.standard.string(forKey: savedURLKey),
+            let url = URL(string: value),
+            let host = url.host,
+            isUgPhoneHost(host)
+        else {
+            return nil
+        }
+
+        return url
+    }
+
+    static func saveURL(_ url: URL) {
+        guard let host = url.host, isUgPhoneHost(host) else {
+            return
+        }
+
+        UserDefaults.standard.set(url.absoluteString, forKey: savedURLKey)
+    }
+
+    private static func isUgPhoneHost(_ host: String) -> Bool {
+        host == "ugphone.com" || host.hasSuffix(".ugphone.com")
     }
 }
 
 // MARK: - Main Screen
 
 struct UgPhoneScreen: View {
+    @Environment(\.scenePhase) private var scenePhase
+
+    @State private var diagnosticText = "Đang kiểm tra..."
+
     var body: some View {
         GeometryReader { geometry in
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
-            // Khung dọc tỷ lệ 9:17.5.
             let screenWidth = min(
                 availableWidth,
                 availableHeight * 9.0 / 17.5
@@ -34,21 +75,29 @@ struct UgPhoneScreen: View {
                 Color.black
                     .ignoresSafeArea()
 
-                UgPhoneWebView()
-                    .frame(
-                        width: screenWidth,
-                        height: screenHeight
+                UgPhoneWebView(
+                    isActive: scenePhase == .active,
+                    diagnosticText: $diagnosticText
+                )
+                .frame(
+                    width: screenWidth,
+                    height: screenHeight
+                )
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 10,
+                        style: .continuous
                     )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 8,
-                            style: .continuous
-                        )
-                    )
-                    .position(
-                        x: availableWidth / 2,
-                        y: availableHeight / 2
-                    )
+                )
+                .overlay(alignment: .topLeading) {
+                    DiagnosticHUD(text: diagnosticText)
+                        .padding(7)
+                        .allowsHitTesting(false)
+                }
+                .position(
+                    x: availableWidth / 2,
+                    y: availableHeight / 2
+                )
             }
             .frame(
                 width: availableWidth,
@@ -61,12 +110,40 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - ChatGPT WebView
+// MARK: - Diagnostic HUD
+
+struct DiagnosticHUD: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(
+                size: 9,
+                weight: .medium,
+                design: .monospaced
+            ))
+            .foregroundColor(.white)
+            .padding(7)
+            .background(
+                Color.black.opacity(0.78)
+            )
+            .clipShape(
+                RoundedRectangle(cornerRadius: 6)
+            )
+            .lineLimit(10)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// MARK: - UgPhone WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
+    let isActive: Bool
+
+    @Binding var diagnosticText: String
 
     private let homeURL = URL(
-        string: "https://chatgpt.com/"
+        string: "https://www.ugphone.com/"
     )!
 
     func makeCoordinator() -> Coordinator {
@@ -76,74 +153,226 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Duy trì cookie đăng nhập.
         configuration.websiteDataStore = .default()
-
-        // Hỗ trợ nội dung đa phương tiện.
         configuration.allowsInlineMediaPlayback = true
 
-        // CSS giữ thanh điều hướng ở trên cùng.
-        let navigationStyle = """
+        let contentController = WKUserContentController()
+
+        // Nhận thông số chẩn đoán từ JavaScript.
+        contentController.add(
+            context.coordinator,
+            name: "ugDiag"
+        )
+
+        let diagnosticScript = """
         (function() {
-            if (window.__ugNavigationStyleInstalled) return;
-            window.__ugNavigationStyleInstalled = true;
+            if (window.__ugDiagnosticInstalled) return;
 
-            var style = document.createElement('style');
+            window.__ugDiagnosticInstalled = true;
 
-            style.id = 'ug-chatgpt-navigation-style';
+            var lastVideoFrames = new WeakMap();
+            var lastVideoTime = performance.now();
 
-            style.textContent = `
-                html {
-                    background: #000 !important;
+            async function collectDiagnostics() {
+                try {
+                    var videos = Array.from(
+                        document.querySelectorAll('video')
+                    );
+
+                    var canvases = Array.from(
+                        document.querySelectorAll('canvas')
+                    );
+
+                    var now = performance.now();
+                    var elapsed = (now - lastVideoTime) / 1000;
+
+                    var videoReports = [];
+
+                    videos.forEach(function(video, index) {
+                        var quality = null;
+
+                        try {
+                            if (video.getVideoPlaybackQuality) {
+                                quality = video.getVideoPlaybackQuality();
+                            }
+                        } catch(e) {}
+
+                        var totalFrames = quality
+                            ? quality.totalVideoFrames
+                            : (
+                                typeof video.webkitDecodedFrameCount === 'number'
+                                ? video.webkitDecodedFrameCount
+                                : null
+                            );
+
+                        var droppedFrames = quality
+                            ? quality.droppedVideoFrames
+                            : (
+                                typeof video.webkitDroppedFrameCount === 'number'
+                                ? video.webkitDroppedFrameCount
+                                : null
+                            );
+
+                        var previous = lastVideoFrames.get(video);
+
+                        var fps = "--";
+
+                        if (
+                            previous &&
+                            totalFrames !== null &&
+                            elapsed > 0
+                        ) {
+                            fps = (
+                                (totalFrames - previous) / elapsed
+                            ).toFixed(1);
+                        }
+
+                        if (totalFrames !== null) {
+                            lastVideoFrames.set(video, totalFrames);
+                        }
+
+                        videoReports.push({
+                            index: index,
+                            width: video.videoWidth,
+                            height: video.videoHeight,
+                            paused: video.paused,
+                            readyState: video.readyState,
+                            fps: fps,
+                            totalFrames: totalFrames,
+                            droppedFrames: droppedFrames
+                        });
+                    });
+
+                    lastVideoTime = now;
+
+                    var canvasReports = canvases.map(function(canvas) {
+                        return {
+                            width: canvas.width,
+                            height: canvas.height
+                        };
+                    });
+
+                    var rtcReports = [];
+
+                    if (window.RTCPeerConnection) {
+                        var connections =
+                            window.__ugPeerConnections || [];
+
+                        connections.forEach(function(pc) {
+                            if (!pc || !pc.getStats) return;
+                        });
+                    }
+
+                    // Kiểm tra các kết nối WebRTC có thể truy cập
+                    // từ JavaScript của trang.
+                    var peers = window.__ugPeerConnections || [];
+
+                    for (var i = 0; i < peers.length; i++) {
+                        try {
+                            var stats = await peers[i].getStats();
+
+                            stats.forEach(function(item) {
+                                if (
+                                    item.type === 'inbound-rtp' &&
+                                    (item.kind === 'video' ||
+                                     item.mediaType === 'video')
+                                ) {
+                                    rtcReports.push({
+                                        fps: item.framesPerSecond || null,
+                                        decoded: item.framesDecoded || 0,
+                                        received: item.framesReceived || 0,
+                                        lost: item.packetsLost || 0,
+                                        jitter: item.jitter || 0
+                                    });
+                                }
+                            });
+                        } catch(e) {}
+                    }
+
+                    var report = [];
+
+                    report.push(
+                        'VIDEO: ' + videos.length
+                    );
+
+                    if (videoReports.length > 0) {
+                        videoReports.forEach(function(v, index) {
+                            report.push(
+                                'V' + index + ': ' +
+                                v.width + 'x' + v.height +
+                                ' | FPS ' + v.fps +
+                                ' | ' + (v.paused ? 'PAUSED' : 'PLAYING')
+                            );
+
+                            report.push(
+                                'Frames: ' + v.totalFrames +
+                                ' | Dropped: ' + v.droppedFrames
+                            );
+                        });
+                    } else {
+                        report.push('VIDEO: No HTML video detected');
+                    }
+
+                    report.push(
+                        'CANVAS: ' + canvases.length
+                    );
+
+                    canvasReports.slice(0, 3).forEach(function(c, i) {
+                        report.push(
+                            'C' + i + ': ' +
+                            c.width + 'x' + c.height
+                        );
+                    });
+
+                    if (rtcReports.length > 0) {
+                        rtcReports.forEach(function(r, i) {
+                            report.push(
+                                'RTC' + i +
+                                ': FPS ' + (r.fps || '--') +
+                                ' | Decoded ' + r.decoded +
+                                ' | Lost ' + r.lost
+                            );
+                        });
+                    } else {
+                        report.push('WEBRTC: No accessible stats');
+                    }
+
+                    report.push(
+                        'TIME: ' + new Date().toLocaleTimeString()
+                    );
+
+                    window.webkit.messageHandlers.ugDiag.postMessage({
+                        report: report.join('\\n')
+                    });
+
+                } catch(error) {
+                    window.webkit.messageHandlers.ugDiag.postMessage({
+                        report: 'Diagnostic error: ' + error.message
+                    });
                 }
+            }
 
-                body {
-                    background: #000 !important;
-                }
+            window.__ugCollectDiagnostics = collectDiagnostics;
 
-                /*
-                 Giữ thanh điều hướng chính ở trên cùng.
-                 Không áp dụng position: fixed cho mọi phần tử
-                 để tránh làm hỏng bố cục trang.
-                */
-                header,
-                [data-testid="conversation-header"],
-                [data-testid="mobile-header"] {
-                    position: sticky !important;
-                    top: 0 !important;
-                    z-index: 9999 !important;
-                    background-color: #000 !important;
-                }
+            // Kiểm tra mỗi 3 giây, không can thiệp video.
+            window.__ugDiagnosticTimer = setInterval(
+                collectDiagnostics,
+                3000
+            );
 
-                /*
-                 Giữ thanh điều hướng nằm phía trên nội dung
-                 trong trường hợp trang sử dụng header sticky.
-                */
-                header a,
-                header button {
-                    -webkit-tap-highlight-color: transparent;
-                }
-
-                ::-webkit-scrollbar {
-                    width: 0 !important;
-                    height: 0 !important;
-                }
-            `;
-
-            (document.head || document.documentElement)
-                .appendChild(style);
+            collectDiagnostics();
         })();
         """
 
-        let userScript = WKUserScript(
-            source: navigationStyle,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
+        contentController.addUserScript(
+            WKUserScript(
+                source: diagnosticScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
         )
 
-        configuration.userContentController.addUserScript(
-            userScript
-        )
+        configuration.userContentController = contentController
 
         let webView = WKWebView(
             frame: .zero,
@@ -153,29 +382,36 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        // Cảm ứng.
-        webView.isUserInteractionEnabled = true
-        webView.isMultipleTouchEnabled = true
-
-        // Cuộn trang.
-        webView.scrollView.isScrollEnabled = true
-        webView.scrollView.bounces = true
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
         webView.scrollView.showsVerticalScrollIndicator = false
         webView.scrollView.showsHorizontalScrollIndicator = false
-        webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+        webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
 
-        // Nền tối.
         webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
-        // Tải ChatGPT.
+        webView.layer.shouldRasterize = false
+        webView.scrollView.layer.shouldRasterize = false
+
+        context.coordinator.webView = webView
+
+        context.coordinator.onDiagnostic = { report in
+            DispatchQueue.main.async {
+                diagnosticText = report
+            }
+        }
+
+        context.coordinator.lastActive = isActive
+
+        let startURL = UgPhoneSession.savedURL() ?? homeURL
+
         webView.load(
-            URLRequest(
-                url: homeURL,
-                cachePolicy: .useProtocolCachePolicy,
-                timeoutInterval: 60
-            )
+            URLRequest(url: startURL)
         )
 
         return webView
@@ -185,28 +421,71 @@ struct UgPhoneWebView: UIViewRepresentable {
         _ webView: WKWebView,
         context: Context
     ) {
-        // Không tải lại trang khi SwiftUI cập nhật.
+        guard context.coordinator.lastActive != isActive else {
+            return
+        }
+
+        context.coordinator.lastActive = isActive
+
+        let script = isActive
+            ? "window.__ugResumeMedia && window.__ugResumeMedia();"
+            : "window.__ugPauseMedia && window.__ugPauseMedia();"
+
+        webView.evaluateJavaScript(
+            script,
+            completionHandler: nil
+        )
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject,
                              WKNavigationDelegate,
-                             WKUIDelegate {
+                             WKUIDelegate,
+                             WKScriptMessageHandler {
 
-        // Mở liên kết target="_blank" trong cùng WebView.
+        weak var webView: WKWebView?
+
+        var lastActive: Bool?
+
+        var onDiagnostic: ((String) -> Void)?
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard
+                message.name == "ugDiag",
+                let body = message.body as? [String: Any],
+                let report = body["report"] as? String
+            else {
+                return
+            }
+
+            onDiagnostic?(report)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            guard let url = webView.url else {
+                return
+            }
+
+            UgPhoneSession.saveURL(url)
+        }
+
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-
-            guard navigationAction.targetFrame == nil else {
-                return nil
-            }
-
-            guard let url = navigationAction.request.url else {
+            guard
+                navigationAction.targetFrame == nil,
+                let url = navigationAction.request.url
+            else {
                 return nil
             }
 
@@ -217,35 +496,12 @@ struct UgPhoneWebView: UIViewRepresentable {
             return nil
         }
 
-        // Cho phép điều hướng.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             decisionHandler(.allow)
-        }
-
-        // Lỗi điều hướng.
-        func webView(
-            _ webView: WKWebView,
-            didFail navigation: WKNavigation!,
-            withError error: Error
-        ) {
-            print(
-                "ChatGPT navigation error: \(error.localizedDescription)"
-            )
-        }
-
-        // Lỗi tải trang.
-        func webView(
-            _ webView: WKWebView,
-            didFailProvisionalNavigation navigation: WKNavigation!,
-            withError error: Error
-        ) {
-            print(
-                "ChatGPT loading error: \(error.localizedDescription)"
-            )
         }
     }
 }
