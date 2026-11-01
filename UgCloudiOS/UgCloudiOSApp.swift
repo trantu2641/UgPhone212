@@ -57,10 +57,10 @@ struct UgPhoneScreen: View {
             // Giữ nguyên tỷ lệ 9:17.5
             let screenWidth = min(
                 availableWidth,
-                availableHeight * 9.0 / 17.5
+                availableHeight * 9.0 / 16.0
             )
 
-            let screenHeight = screenWidth * 17.5 / 9.0
+            let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
                 Color.black
