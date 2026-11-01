@@ -1,7 +1,6 @@
 
 import SwiftUI
 import WebKit
-import UIKit
 
 @main
 struct UgCloudiOSApp: App {
@@ -49,7 +48,6 @@ enum UgPhoneSession {
 
 struct UgPhoneScreen: View {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var diagnosticText = "Đang kiểm tra UgPhone..."
 
     var body: some View {
         GeometryReader { geometry in
@@ -59,18 +57,17 @@ struct UgPhoneScreen: View {
             // Giữ nguyên tỷ lệ 9:17.5.
             let screenWidth = min(
                 availableWidth,
-                availableHeight * 9.0 / 16.0
+                availableHeight * 9.0 / 17.5
             )
 
-            let screenHeight = screenWidth * 16.0 / 9.0
+            let screenHeight = screenWidth * 17.5 / 9.0
 
             ZStack {
                 Color.black
                     .ignoresSafeArea()
 
                 UgPhoneWebView(
-                    isActive: scenePhase == .active,
-                    diagnosticText: $diagnosticText
+                    isActive: scenePhase == .active
                 )
                 .frame(
                     width: screenWidth,
@@ -82,11 +79,6 @@ struct UgPhoneScreen: View {
                         style: .continuous
                     )
                 )
-                .overlay(alignment: .topLeading) {
-                    DiagnosticHUD(text: diagnosticText)
-                        .padding(7)
-                        .allowsHitTesting(false)
-                }
                 .position(
                     x: availableWidth / 2,
                     y: availableHeight / 2
@@ -103,35 +95,10 @@ struct UgPhoneScreen: View {
     }
 }
 
-// MARK: - Diagnostic HUD
-
-struct DiagnosticHUD: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.system(
-                size: 9,
-                weight: .medium,
-                design: .monospaced
-            ))
-            .foregroundColor(.white)
-            .padding(7)
-            .background(Color.black.opacity(0.82))
-            .clipShape(
-                RoundedRectangle(cornerRadius: 8)
-            )
-            .lineLimit(12)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-// MARK: - UgPhone WebView
+// MARK: - WebView
 
 struct UgPhoneWebView: UIViewRepresentable {
     let isActive: Bool
-
-    @Binding var diagnosticText: String
 
     private let homeURL = URL(
         string: "https://www.ugphone.com/"
@@ -144,149 +111,66 @@ struct UgPhoneWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
+        // Giữ cookie và phiên đăng nhập.
         configuration.websiteDataStore = .default()
         configuration.allowsInlineMediaPlayback = true
 
         let contentController = WKUserContentController()
 
-        contentController.add(
-            context.coordinator,
-            name: "ugDiag"
-        )
-
-        // MARK: Rendering and color optimization
-
         let optimizationScript = """
         (function() {
-            if (window.__ugOptimizationInstalled) return;
-            window.__ugOptimizationInstalled = true;
+            if (window.__ugCloudInstalled) return;
+            window.__ugCloudInstalled = true;
 
-            // =========================================
-            // 1. TARGET 40 FPS FOR PAGE ANIMATION CALLBACKS
-            // =========================================
-
-            (function() {
-                var nativeRAF = window.requestAnimationFrame.bind(window);
-                var nativeCancelRAF = window.cancelAnimationFrame.bind(window);
-
-                var frameDuration = 1000 / 40;
-                var lastFrameTime = 0;
-                var nextID = 1;
-                var callbacks = new Map();
-                var scheduled = false;
-
-                function scheduleFrame() {
-                    if (scheduled || callbacks.size === 0) return;
-
-                    scheduled = true;
-
-                    nativeRAF(function(timestamp) {
-                        scheduled = false;
-
-                        if (
-                            lastFrameTime === 0 ||
-                            timestamp - lastFrameTime >= frameDuration - 0.5
-                        ) {
-                            lastFrameTime = timestamp;
-
-                            var ids = Array.from(callbacks.keys());
-
-                            ids.forEach(function(id) {
-                                var callback = callbacks.get(id);
-
-                                if (!callback) return;
-
-                                callbacks.delete(id);
-
-                                try {
-                                    callback(timestamp);
-                                } catch(error) {
-                                    setTimeout(function() {
-                                        throw error;
-                                    }, 0);
-                                }
-                            });
-                        }
-
-                        scheduleFrame();
-                    });
-                }
-
-                window.requestAnimationFrame = function(callback) {
-                    var id = nextID++;
-
-                    callbacks.set(id, callback);
-                    scheduleFrame();
-
-                    return id;
-                };
-
-                window.cancelAnimationFrame = function(id) {
-                    callbacks.delete(id);
-                };
-
-                window.__ugFPSController = {
-                    target: 40,
-                    enabled: true
-                };
-            })();
-
-            // =========================================
-            // 2. COLOR AND CONTRAST
-            // =========================================
-
+            // CSS tối giản, không can thiệp requestAnimationFrame.
             function installStyle() {
                 if (!document.documentElement) return;
 
-                if (document.getElementById('ug-cloud-style')) {
-                    return;
+                if (!document.getElementById('ug-cloud-style')) {
+                    var style = document.createElement('style');
+                    style.id = 'ug-cloud-style';
+
+                    style.textContent = `
+                        html {
+                            overscroll-behavior: none !important;
+                            scroll-behavior: auto !important;
+                        }
+
+                        body {
+                            overscroll-behavior: none !important;
+                        }
+
+                        ::-webkit-scrollbar {
+                            width: 0 !important;
+                            height: 0 !important;
+                        }
+
+                        /*
+                         Contrast +16%
+                         Saturation -10%
+
+                         Chỉ áp dụng lên Canvas cloud phone.
+                        */
+
+                        canvas {
+                            filter:
+                                contrast(1.16)
+                                saturate(0.90);
+                        }
+                    `;
+
+                    (document.head || document.documentElement)
+                        .appendChild(style);
                 }
-
-                var style = document.createElement('style');
-                style.id = 'ug-cloud-style';
-
-                style.textContent = `
-                    html {
-                        overscroll-behavior: none !important;
-                        scroll-behavior: auto !important;
-                    }
-
-                    body {
-                        overscroll-behavior: none !important;
-                    }
-
-                    ::-webkit-scrollbar {
-                        width: 0 !important;
-                        height: 0 !important;
-                    }
-
-                    /*
-                       Tăng nhẹ màu sắc và tương phản.
-                       Áp dụng lên Canvas của cloud phone.
-                    */
-
-                    canvas {
-                        filter:
-                            saturate(1.12)
-                            contrast(1.08)
-                            brightness(1.02);
-                    }
-                `;
-
-                (document.head || document.documentElement)
-                    .appendChild(style);
 
                 var viewport = document.querySelector(
                     'meta[name="viewport"]'
                 );
 
-                if (!viewport) {
+                if (!viewport && document.head) {
                     viewport = document.createElement('meta');
                     viewport.name = 'viewport';
-
-                    if (document.head) {
-                        document.head.appendChild(viewport);
-                    }
+                    document.head.appendChild(viewport);
                 }
 
                 if (viewport) {
@@ -298,10 +182,7 @@ struct UgPhoneWebView: UIViewRepresentable {
 
             installStyle();
 
-            // =========================================
-            // 3. PAUSE VIDEO WHEN APP GOES BACKGROUND
-            // =========================================
-
+            // Tạm dừng video khi app xuống nền.
             window.__ugPauseMedia = function() {
                 document.querySelectorAll('video').forEach(function(video) {
                     video.dataset.ugWasPlaying =
@@ -313,6 +194,7 @@ struct UgPhoneWebView: UIViewRepresentable {
                 });
             };
 
+            // Khôi phục video khi app hoạt động trở lại.
             window.__ugResumeMedia = function() {
                 document.querySelectorAll('video').forEach(function(video) {
                     if (video.dataset.ugWasPlaying === '1') {
@@ -328,173 +210,18 @@ struct UgPhoneWebView: UIViewRepresentable {
                     }
                 });
             };
-
-            window.__ugApplyStyle = installStyle;
         })();
         """
 
         contentController.addUserScript(
             WKUserScript(
                 source: optimizationScript,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: true
-            )
-        )
-
-        // MARK: Diagnostic script
-
-        let diagnosticScript = """
-        (function() {
-            if (window.__ugDiagnosticInstalled) return;
-            window.__ugDiagnosticInstalled = true;
-
-            var lastVideoFrames = new WeakMap();
-            var lastVideoTime = performance.now();
-
-            async function collectDiagnostics() {
-                try {
-                    var videos = Array.from(
-                        document.querySelectorAll('video')
-                    );
-
-                    var canvases = Array.from(
-                        document.querySelectorAll('canvas')
-                    );
-
-                    var now = performance.now();
-                    var elapsed = (now - lastVideoTime) / 1000;
-
-                    var reports = [];
-
-                    videos.forEach(function(video, index) {
-                        var quality = null;
-
-                        try {
-                            if (video.getVideoPlaybackQuality) {
-                                quality = video.getVideoPlaybackQuality();
-                            }
-                        } catch(e) {}
-
-                        var totalFrames = quality
-                            ? quality.totalVideoFrames
-                            : (
-                                typeof video.webkitDecodedFrameCount === 'number'
-                                ? video.webkitDecodedFrameCount
-                                : null
-                            );
-
-                        var droppedFrames = quality
-                            ? quality.droppedVideoFrames
-                            : (
-                                typeof video.webkitDroppedFrameCount === 'number'
-                                ? video.webkitDroppedFrameCount
-                                : null
-                            );
-
-                        var previous = lastVideoFrames.get(video);
-                        var fps = "--";
-
-                        if (
-                            previous !== undefined &&
-                            totalFrames !== null &&
-                            elapsed > 0
-                        ) {
-                            fps = (
-                                (totalFrames - previous) / elapsed
-                            ).toFixed(1);
-                        }
-
-                        if (totalFrames !== null) {
-                            lastVideoFrames.set(video, totalFrames);
-                        }
-
-                        reports.push({
-                            width: video.videoWidth,
-                            height: video.videoHeight,
-                            paused: video.paused,
-                            fps: fps,
-                            frames: totalFrames,
-                            dropped: droppedFrames
-                        });
-                    });
-
-                    lastVideoTime = now;
-
-                    var lines = [];
-
-                    lines.push('TARGET FPS: 40');
-                    lines.push('VIDEO: ' + videos.length);
-
-                    reports.forEach(function(v, i) {
-                        lines.push(
-                            'V' + i + ': ' +
-                            v.width + 'x' + v.height +
-                            ' | FPS: ' + v.fps
-                        );
-
-                        lines.push(
-                            'Frames: ' + v.frames +
-                            ' | Dropped: ' + v.dropped
-                        );
-                    });
-
-                    if (videos.length === 0) {
-                        lines.push('VIDEO: No HTML video detected');
-                    }
-
-                    lines.push('CANVAS: ' + canvases.length);
-
-                    canvases.slice(0, 3).forEach(function(c, i) {
-                        lines.push(
-                            'C' + i + ': ' +
-                            c.width + 'x' + c.height
-                        );
-                    });
-
-                    lines.push(
-                        'RAF LIMIT: ' +
-                        (window.__ugFPSController
-                            ? window.__ugFPSController.target
-                            : '--')
-                    );
-
-                    lines.push(
-                        'TIME: ' + new Date().toLocaleTimeString()
-                    );
-
-                    window.webkit.messageHandlers.ugDiag.postMessage({
-                        report: lines.join('\\n')
-                    });
-
-                } catch(error) {
-                    window.webkit.messageHandlers.ugDiag.postMessage({
-                        report: 'Diagnostic error: ' + error.message
-                    });
-                }
-            }
-
-            window.__ugCollectDiagnostics = collectDiagnostics;
-
-            window.__ugDiagnosticTimer = setInterval(
-                collectDiagnostics,
-                3000
-            );
-
-            collectDiagnostics();
-        })();
-        """
-
-        contentController.addUserScript(
-            WKUserScript(
-                source: diagnosticScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
         )
 
         configuration.userContentController = contentController
-
-        // MARK: Create WebView
 
         let webView = WKWebView(
             frame: .zero,
@@ -504,6 +231,7 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
+        // Giữ nguyên cảm ứng của UgPhone.
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -517,19 +245,14 @@ struct UgPhoneWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
+        // Không rasterize toàn bộ nội dung động.
         webView.layer.shouldRasterize = false
         webView.scrollView.layer.shouldRasterize = false
 
         context.coordinator.webView = webView
-
-        context.coordinator.onDiagnostic = { report in
-            DispatchQueue.main.async {
-                diagnosticText = report
-            }
-        }
-
         context.coordinator.lastActive = isActive
 
+        // Mở trang đã lưu.
         let startURL = UgPhoneSession.savedURL() ?? homeURL
 
         webView.load(
@@ -559,33 +282,14 @@ struct UgPhoneWebView: UIViewRepresentable {
         )
     }
 
-    // MARK: - Coordinator
+    // MARK: - Navigation
 
     final class Coordinator: NSObject,
                              WKNavigationDelegate,
-                             WKUIDelegate,
-                             WKScriptMessageHandler {
+                             WKUIDelegate {
 
         weak var webView: WKWebView?
-
         var lastActive: Bool?
-
-        var onDiagnostic: ((String) -> Void)?
-
-        func userContentController(
-            _ userContentController: WKUserContentController,
-            didReceive message: WKScriptMessage
-        ) {
-            guard
-                message.name == "ugDiag",
-                let body = message.body as? [String: Any],
-                let report = body["report"] as? String
-            else {
-                return
-            }
-
-            onDiagnostic?(report)
-        }
 
         func webView(
             _ webView: WKWebView,
@@ -598,6 +302,7 @@ struct UgPhoneWebView: UIViewRepresentable {
             UgPhoneSession.saveURL(url)
         }
 
+        // Mở cửa sổ mới trong cùng WebView.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
