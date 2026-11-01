@@ -5,18 +5,11 @@ import UIKit
 
 @main
 struct UgCloudiOSApp: App {
-    @Environment(\.scenePhase) private var scenePhase
-
     var body: some Scene {
         WindowGroup {
             UgPhoneScreen()
                 .preferredColorScheme(.dark)
                 .statusBarHidden(true)
-                .onChange(of: scenePhase) { phase in
-                    if phase == .active {
-                        print("UgCloudiOS: App active")
-                    }
-                }
         }
     }
 }
@@ -56,20 +49,20 @@ enum UgPhoneSession {
 
 struct UgPhoneScreen: View {
     @Environment(\.scenePhase) private var scenePhase
-
-    @State private var diagnosticText = "Đang kiểm tra..."
+    @State private var diagnosticText = "Đang kiểm tra UgPhone..."
 
     var body: some View {
         GeometryReader { geometry in
             let availableWidth = geometry.size.width
             let availableHeight = geometry.size.height
 
+            // Giữ nguyên tỷ lệ 9:17.5.
             let screenWidth = min(
                 availableWidth,
-                availableHeight * 9.0 / 17.5
+                availableHeight * 9.0 / 16.0
             )
 
-            let screenHeight = screenWidth * 17.5 / 9.0
+            let screenHeight = screenWidth * 16.0 / 9.0
 
             ZStack {
                 Color.black
@@ -124,13 +117,11 @@ struct DiagnosticHUD: View {
             ))
             .foregroundColor(.white)
             .padding(7)
-            .background(
-                Color.black.opacity(0.78)
-            )
+            .background(Color.black.opacity(0.82))
             .clipShape(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 8)
             )
-            .lineLimit(10)
+            .lineLimit(12)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -158,16 +149,203 @@ struct UgPhoneWebView: UIViewRepresentable {
 
         let contentController = WKUserContentController()
 
-        // Nhận thông số chẩn đoán từ JavaScript.
         contentController.add(
             context.coordinator,
             name: "ugDiag"
         )
 
+        // MARK: Rendering and color optimization
+
+        let optimizationScript = """
+        (function() {
+            if (window.__ugOptimizationInstalled) return;
+            window.__ugOptimizationInstalled = true;
+
+            // =========================================
+            // 1. TARGET 40 FPS FOR PAGE ANIMATION CALLBACKS
+            // =========================================
+
+            (function() {
+                var nativeRAF = window.requestAnimationFrame.bind(window);
+                var nativeCancelRAF = window.cancelAnimationFrame.bind(window);
+
+                var frameDuration = 1000 / 40;
+                var lastFrameTime = 0;
+                var nextID = 1;
+                var callbacks = new Map();
+                var scheduled = false;
+
+                function scheduleFrame() {
+                    if (scheduled || callbacks.size === 0) return;
+
+                    scheduled = true;
+
+                    nativeRAF(function(timestamp) {
+                        scheduled = false;
+
+                        if (
+                            lastFrameTime === 0 ||
+                            timestamp - lastFrameTime >= frameDuration - 0.5
+                        ) {
+                            lastFrameTime = timestamp;
+
+                            var ids = Array.from(callbacks.keys());
+
+                            ids.forEach(function(id) {
+                                var callback = callbacks.get(id);
+
+                                if (!callback) return;
+
+                                callbacks.delete(id);
+
+                                try {
+                                    callback(timestamp);
+                                } catch(error) {
+                                    setTimeout(function() {
+                                        throw error;
+                                    }, 0);
+                                }
+                            });
+                        }
+
+                        scheduleFrame();
+                    });
+                }
+
+                window.requestAnimationFrame = function(callback) {
+                    var id = nextID++;
+
+                    callbacks.set(id, callback);
+                    scheduleFrame();
+
+                    return id;
+                };
+
+                window.cancelAnimationFrame = function(id) {
+                    callbacks.delete(id);
+                };
+
+                window.__ugFPSController = {
+                    target: 40,
+                    enabled: true
+                };
+            })();
+
+            // =========================================
+            // 2. COLOR AND CONTRAST
+            // =========================================
+
+            function installStyle() {
+                if (!document.documentElement) return;
+
+                if (document.getElementById('ug-cloud-style')) {
+                    return;
+                }
+
+                var style = document.createElement('style');
+                style.id = 'ug-cloud-style';
+
+                style.textContent = `
+                    html {
+                        overscroll-behavior: none !important;
+                        scroll-behavior: auto !important;
+                    }
+
+                    body {
+                        overscroll-behavior: none !important;
+                    }
+
+                    ::-webkit-scrollbar {
+                        width: 0 !important;
+                        height: 0 !important;
+                    }
+
+                    /*
+                       Tăng nhẹ màu sắc và tương phản.
+                       Áp dụng lên Canvas của cloud phone.
+                    */
+
+                    canvas {
+                        filter:
+                            saturate(1.12)
+                            contrast(1.08)
+                            brightness(1.02);
+                    }
+                `;
+
+                (document.head || document.documentElement)
+                    .appendChild(style);
+
+                var viewport = document.querySelector(
+                    'meta[name="viewport"]'
+                );
+
+                if (!viewport) {
+                    viewport = document.createElement('meta');
+                    viewport.name = 'viewport';
+
+                    if (document.head) {
+                        document.head.appendChild(viewport);
+                    }
+                }
+
+                if (viewport) {
+                    viewport.content =
+                        'width=device-width, initial-scale=1.0, ' +
+                        'maximum-scale=1.0, user-scalable=no';
+                }
+            }
+
+            installStyle();
+
+            // =========================================
+            // 3. PAUSE VIDEO WHEN APP GOES BACKGROUND
+            // =========================================
+
+            window.__ugPauseMedia = function() {
+                document.querySelectorAll('video').forEach(function(video) {
+                    video.dataset.ugWasPlaying =
+                        (!video.paused && !video.ended) ? '1' : '0';
+
+                    if (!video.paused) {
+                        video.pause();
+                    }
+                });
+            };
+
+            window.__ugResumeMedia = function() {
+                document.querySelectorAll('video').forEach(function(video) {
+                    if (video.dataset.ugWasPlaying === '1') {
+                        delete video.dataset.ugWasPlaying;
+
+                        var result = video.play();
+
+                        if (result && result.catch) {
+                            result.catch(function() {});
+                        }
+                    } else {
+                        delete video.dataset.ugWasPlaying;
+                    }
+                });
+            };
+
+            window.__ugApplyStyle = installStyle;
+        })();
+        """
+
+        contentController.addUserScript(
+            WKUserScript(
+                source: optimizationScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+
+        // MARK: Diagnostic script
+
         let diagnosticScript = """
         (function() {
             if (window.__ugDiagnosticInstalled) return;
-
             window.__ugDiagnosticInstalled = true;
 
             var lastVideoFrames = new WeakMap();
@@ -186,7 +364,7 @@ struct UgPhoneWebView: UIViewRepresentable {
                     var now = performance.now();
                     var elapsed = (now - lastVideoTime) / 1000;
 
-                    var videoReports = [];
+                    var reports = [];
 
                     videos.forEach(function(video, index) {
                         var quality = null;
@@ -214,11 +392,10 @@ struct UgPhoneWebView: UIViewRepresentable {
                             );
 
                         var previous = lastVideoFrames.get(video);
-
                         var fps = "--";
 
                         if (
-                            previous &&
+                            previous !== undefined &&
                             totalFrames !== null &&
                             elapsed > 0
                         ) {
@@ -231,118 +408,62 @@ struct UgPhoneWebView: UIViewRepresentable {
                             lastVideoFrames.set(video, totalFrames);
                         }
 
-                        videoReports.push({
-                            index: index,
+                        reports.push({
                             width: video.videoWidth,
                             height: video.videoHeight,
                             paused: video.paused,
-                            readyState: video.readyState,
                             fps: fps,
-                            totalFrames: totalFrames,
-                            droppedFrames: droppedFrames
+                            frames: totalFrames,
+                            dropped: droppedFrames
                         });
                     });
 
                     lastVideoTime = now;
 
-                    var canvasReports = canvases.map(function(canvas) {
-                        return {
-                            width: canvas.width,
-                            height: canvas.height
-                        };
+                    var lines = [];
+
+                    lines.push('TARGET FPS: 40');
+                    lines.push('VIDEO: ' + videos.length);
+
+                    reports.forEach(function(v, i) {
+                        lines.push(
+                            'V' + i + ': ' +
+                            v.width + 'x' + v.height +
+                            ' | FPS: ' + v.fps
+                        );
+
+                        lines.push(
+                            'Frames: ' + v.frames +
+                            ' | Dropped: ' + v.dropped
+                        );
                     });
 
-                    var rtcReports = [];
-
-                    if (window.RTCPeerConnection) {
-                        var connections =
-                            window.__ugPeerConnections || [];
-
-                        connections.forEach(function(pc) {
-                            if (!pc || !pc.getStats) return;
-                        });
+                    if (videos.length === 0) {
+                        lines.push('VIDEO: No HTML video detected');
                     }
 
-                    // Kiểm tra các kết nối WebRTC có thể truy cập
-                    // từ JavaScript của trang.
-                    var peers = window.__ugPeerConnections || [];
+                    lines.push('CANVAS: ' + canvases.length);
 
-                    for (var i = 0; i < peers.length; i++) {
-                        try {
-                            var stats = await peers[i].getStats();
-
-                            stats.forEach(function(item) {
-                                if (
-                                    item.type === 'inbound-rtp' &&
-                                    (item.kind === 'video' ||
-                                     item.mediaType === 'video')
-                                ) {
-                                    rtcReports.push({
-                                        fps: item.framesPerSecond || null,
-                                        decoded: item.framesDecoded || 0,
-                                        received: item.framesReceived || 0,
-                                        lost: item.packetsLost || 0,
-                                        jitter: item.jitter || 0
-                                    });
-                                }
-                            });
-                        } catch(e) {}
-                    }
-
-                    var report = [];
-
-                    report.push(
-                        'VIDEO: ' + videos.length
-                    );
-
-                    if (videoReports.length > 0) {
-                        videoReports.forEach(function(v, index) {
-                            report.push(
-                                'V' + index + ': ' +
-                                v.width + 'x' + v.height +
-                                ' | FPS ' + v.fps +
-                                ' | ' + (v.paused ? 'PAUSED' : 'PLAYING')
-                            );
-
-                            report.push(
-                                'Frames: ' + v.totalFrames +
-                                ' | Dropped: ' + v.droppedFrames
-                            );
-                        });
-                    } else {
-                        report.push('VIDEO: No HTML video detected');
-                    }
-
-                    report.push(
-                        'CANVAS: ' + canvases.length
-                    );
-
-                    canvasReports.slice(0, 3).forEach(function(c, i) {
-                        report.push(
+                    canvases.slice(0, 3).forEach(function(c, i) {
+                        lines.push(
                             'C' + i + ': ' +
                             c.width + 'x' + c.height
                         );
                     });
 
-                    if (rtcReports.length > 0) {
-                        rtcReports.forEach(function(r, i) {
-                            report.push(
-                                'RTC' + i +
-                                ': FPS ' + (r.fps || '--') +
-                                ' | Decoded ' + r.decoded +
-                                ' | Lost ' + r.lost
-                            );
-                        });
-                    } else {
-                        report.push('WEBRTC: No accessible stats');
-                    }
+                    lines.push(
+                        'RAF LIMIT: ' +
+                        (window.__ugFPSController
+                            ? window.__ugFPSController.target
+                            : '--')
+                    );
 
-                    report.push(
+                    lines.push(
                         'TIME: ' + new Date().toLocaleTimeString()
                     );
 
                     window.webkit.messageHandlers.ugDiag.postMessage({
-                        report: report.join('\\n')
+                        report: lines.join('\\n')
                     });
 
                 } catch(error) {
@@ -354,7 +475,6 @@ struct UgPhoneWebView: UIViewRepresentable {
 
             window.__ugCollectDiagnostics = collectDiagnostics;
 
-            // Kiểm tra mỗi 3 giây, không can thiệp video.
             window.__ugDiagnosticTimer = setInterval(
                 collectDiagnostics,
                 3000
@@ -373,6 +493,8 @@ struct UgPhoneWebView: UIViewRepresentable {
         )
 
         configuration.userContentController = contentController
+
+        // MARK: Create WebView
 
         let webView = WKWebView(
             frame: .zero,
